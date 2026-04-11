@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+</head>
+<body>
+
+<h2>Dynamic QR (Refreshes every 10 sec)</h2>
+<canvas id="qr"></canvas>
+
+<script>
+function generateQR() {
+  const data = {
+    session_id: "CE101",
+    timestamp: Date.now(),
+    token: Math.random().toString(36).substring(2,8)
+  };
+
+  QRCode.toCanvas(document.getElementById('qr'), JSON.stringify(data));
+}
+
+setInterval(generateQR, 10000);
+generateQR();
+</script>
+
+</body>
+</html>

@@ -154,7 +154,7 @@ function jsonpRequest(url, callbackName, onSuccess, onError){
 /* ================= DEVICE ID ================= */
 function getDeviceId() {
 
-  const EXPIRY_MINUTES = 40; // change to 30–40 as needed
+  const EXPIRY_MINUTES = 10; // change to 30–40 as needed
   const now = Date.now();
 
   let stored = localStorage.getItem("device_data");

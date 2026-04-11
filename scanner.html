@@ -29,7 +29,7 @@ body {
 <body>
 
 <h3>Scan QR to Mark Attendance</h3>
-<p>Allow camera access to continue</p>
+<p>Camera will open automatically</p>
 
 <div id="reader"></div>
 <div id="status"></div>
@@ -45,17 +45,30 @@ if (!student) {
   window.location.href = "index.html";
 }
 
-// 🚫 prevent multiple scans
 let scanned = false;
+let html5QrCode = new Html5Qrcode("reader");
 
-const scanner = new Html5QrcodeScanner("reader", {
-  fps: 10,
-  qrbox: 250
+/* =========================
+   START CAMERA
+========================= */
+Html5Qrcode.getCameras().then(devices => {
+  if (devices.length) {
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    );
+  } else {
+    alert("No camera found");
+  }
 });
 
+/* =========================
+   ON SCAN
+========================= */
 function onScanSuccess(decodedText) {
 
-  if (scanned) return;   // prevent repeat
+  if (scanned) return;
   scanned = true;
 
   let qrData;
@@ -70,45 +83,47 @@ function onScanSuccess(decodedText) {
 
   document.getElementById("status").innerText = "Submitting...";
 
-  fetch(API_URL, {
-    method: "POST",
-    body: JSON.stringify({
-      student_id: student.id,
-      session_id: qrData.session_id,
-      token: qrData.token,
-      timestamp: qrData.timestamp
-    })
-  })
-  .then(res => res.json())
-  .then(res => {
+  // ✅ JSONP request (NO CORS issue)
+  const url = `${API_URL}?type=attendance`
+    + `&student_id=${encodeURIComponent(student.id)}`
+    + `&session_id=${encodeURIComponent(qrData.session_id)}`
+    + `&token=${encodeURIComponent(qrData.token)}`
+    + `&timestamp=${encodeURIComponent(qrData.timestamp)}`
+    + `&callback=handleAttendance`;
 
-    if (res.status === "success") {
-      document.getElementById("status").innerText = "✅ Attendance Marked";
-    } 
-    else if (res.status === "expired") {
-      document.getElementById("status").innerText = "⏱ QR Expired";
-      scanned = false;
-    } 
-    else if (res.status === "already_marked") {
-      document.getElementById("status").innerText = "⚠ Already Marked";
-    } 
-    else {
-      document.getElementById("status").innerText = "❌ Failed";
-      scanned = false;
-    }
+  const script = document.createElement("script");
+  script.src = url;
 
-    scanner.clear(); // stop camera
-
-  })
-  .catch(err => {
-    console.error(err);
-    document.getElementById("status").innerText = "Network Error";
+  script.onerror = () => {
+    document.getElementById("status").innerText = "❌ Network Error";
     scanned = false;
-  });
+  };
+
+  document.body.appendChild(script);
 }
 
-// Start scanner
-scanner.render(onScanSuccess);
+/* =========================
+   HANDLE RESPONSE
+========================= */
+function handleAttendance(res) {
+
+  if (res.status === "success") {
+    document.getElementById("status").innerText = "✅ Attendance Marked";
+  } 
+  else if (res.status === "expired") {
+    document.getElementById("status").innerText = "⏱ QR Expired";
+    scanned = false;
+  } 
+  else if (res.status === "already_marked") {
+    document.getElementById("status").innerText = "⚠ Already Marked";
+  } 
+  else {
+    document.getElementById("status").innerText = "❌ Failed";
+    scanned = false;
+  }
+
+  html5QrCode.stop().catch(()=>{});
+}
 </script>
 
 </body>

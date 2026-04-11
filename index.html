@@ -16,27 +16,21 @@ body{
   align-items:center;
   min-height:100vh;
   margin:0;
-  padding:20px;
-  box-sizing:border-box;
 }
 .container{
   background:#fff;
   padding:25px;
   border-radius:12px;
   width:350px;
-  max-width:100%;
   box-shadow:0 4px 14px rgba(0,0,0,0.12);
   text-align:center;
 }
-h2,h3{margin-top:0;}
 input{
   width:100%;
   padding:10px;
   margin:8px 0;
   border:1px solid #ccc;
   border-radius:6px;
-  box-sizing:border-box;
-  font-size:15px;
 }
 button{
   width:100%;
@@ -53,26 +47,12 @@ button:hover{background:#0056b3;}
 .logout{background:#dc3545;}
 .logout:hover{background:#a71d2a;}
 .secondary{background:#6c757d;}
-.secondary:hover{background:#545b62;}
 .hidden{display:none;}
-#reader{
-  width:100%;
-  max-width:280px;
-  margin:10px auto;
-}
-#status{
-  margin-top:10px;
-  font-weight:bold;
-  min-height:24px;
-  word-break:break-word;
-}
-.small{
-  font-size:13px;
-  color:#666;
-  margin-top:8px;
-}
+#reader{width:280px;margin:auto;}
+#status{margin-top:10px;font-weight:bold;}
 </style>
 </head>
+
 <body>
 
 <div class="container">
@@ -83,7 +63,6 @@ button:hover{background:#0056b3;}
     <input type="text" id="studentId" placeholder="Enter Student ID">
     <input type="password" id="password" placeholder="Enter Password">
     <button id="loginBtn" onclick="login()">Login</button>
-    <div class="small">Login first, then scan the attendance QR</div>
   </div>
 
   <!-- DASHBOARD -->
@@ -105,44 +84,46 @@ button:hover{background:#0056b3;}
 </div>
 
 <script>
+
 const API_URL = "https://script.google.com/macros/s/AKfycbwKYuFF9AGWcDQYrEuBImWzKEY268yPxcdexwG3_sECca6zvdx3g31zooImNo3J3Lo/exec";
 
 let html5QrCode = null;
 let scanned = false;
 
 /* ================= HELPERS ================= */
-function byId(id){
-  return document.getElementById(id);
-}
-
-function cleanupJsonp(callbackName){
-  try { delete window[callbackName]; } catch(e) {}
-  const old = document.getElementById(callbackName);
-  if (old) old.remove();
-}
+function byId(id){ return document.getElementById(id); }
 
 function jsonpRequest(url, callbackName, onSuccess, onError){
-  cleanupJsonp(callbackName);
 
   window[callbackName] = function(data){
-    cleanupJsonp(callbackName);
+    delete window[callbackName];
     onSuccess(data);
   };
 
   const script = document.createElement("script");
-  script.id = callbackName;
-  script.src = url + (url.includes("?") ? "&" : "?") + "callback=" + encodeURIComponent(callbackName);
+  script.src = url + "&callback=" + callbackName;
 
   script.onerror = function(){
-    cleanupJsonp(callbackName);
+    delete window[callbackName];
     if (onError) onError();
   };
 
   document.body.appendChild(script);
 }
 
+/* ================= DEVICE ID ================= */
+function getDeviceId() {
+  let id = localStorage.getItem("device_id");
+  if (!id) {
+    id = "DEV-" + Math.random().toString(36).substring(2) + Date.now();
+    localStorage.setItem("device_id", id);
+  }
+  return id;
+}
+
 /* ================= LOGIN ================= */
 function login(){
+
   const id = byId("studentId").value.trim();
   const pass = byId("password").value.trim();
   const btn = byId("loginBtn");
@@ -155,219 +136,150 @@ function login(){
   btn.disabled = true;
   btn.innerText = "Logging in...";
 
-  const cb = "handleLogin_" + Date.now();
+  const cb = "login_" + Date.now();
 
   const url =
     API_URL +
-    "?type=login" +
-    "&id=" + encodeURIComponent(id) +
+    "?type=login&id=" + encodeURIComponent(id) +
     "&pass=" + encodeURIComponent(pass);
 
-  jsonpRequest(
-    url,
-    cb,
-    function(data){
-      btn.disabled = false;
-      btn.innerText = "Login";
+  jsonpRequest(url, cb, function(data){
 
-      if (data && data.status === "success"){
-        localStorage.setItem("student", JSON.stringify(data.student));
-        showDashboard();
-      } else {
-        alert("Invalid ID or Password");
-      }
-    },
-    function(){
-      btn.disabled = false;
-      btn.innerText = "Login";
-      alert("Network error while login");
+    btn.disabled = false;
+    btn.innerText = "Login";
+
+    if (data.status === "success"){
+      localStorage.setItem("student", JSON.stringify(data.student));
+      showDashboard();
+    } else {
+      alert("Invalid ID or Password");
     }
-  );
+
+  }, function(){
+    btn.disabled = false;
+    btn.innerText = "Login";
+    alert("Network error");
+  });
 }
 
 /* ================= DASHBOARD ================= */
 function showDashboard(){
-  const studentRaw = localStorage.getItem("student");
-  if (!studentRaw) return;
 
-  const student = JSON.parse(studentRaw);
+  const student = JSON.parse(localStorage.getItem("student"));
+  if (!student) return;
 
   byId("loginSection").classList.add("hidden");
   byId("dashboard").classList.remove("hidden");
-  byId("scannerSection").classList.add("hidden");
 
   byId("userInfo").innerText = student.name + " (" + student.id + ")";
 }
 
 function logout(){
-  stopScannerSilently();
   localStorage.removeItem("student");
   location.reload();
 }
 
 /* ================= SCANNER ================= */
 function openScanner(){
-  const studentRaw = localStorage.getItem("student");
-  if (!studentRaw){
-    alert("Login first");
-    return;
-  }
-
   byId("dashboard").classList.add("hidden");
   byId("scannerSection").classList.remove("hidden");
-  byId("status").innerText = "";
   startScanner();
 }
 
 function closeScanner(){
-  stopScannerSilently().finally(() => {
-    byId("scannerSection").classList.add("hidden");
-    byId("dashboard").classList.remove("hidden");
-    byId("status").innerText = "";
-  });
-}
 
-function stopScannerSilently(){
   if (html5QrCode){
-    return html5QrCode.stop()
-      .then(() => {
-        try { html5QrCode.clear(); } catch(e) {}
-        html5QrCode = null;
-      })
-      .catch(() => {
-        try { html5QrCode.clear(); } catch(e) {}
-        html5QrCode = null;
-      });
+    html5QrCode.stop().then(() => {
+      byId("scannerSection").classList.add("hidden");
+      byId("dashboard").classList.remove("hidden");
+    });
   }
-  return Promise.resolve();
 }
 
 function startScanner(){
+
   scanned = false;
+  html5QrCode = new Html5Qrcode("reader");
 
-  stopScannerSilently().then(() => {
-    html5QrCode = new Html5Qrcode("reader");
-
-    Html5Qrcode.getCameras().then(devices => {
-      if (!devices || !devices.length){
-        byId("status").innerText = "❌ No camera found";
-        return;
-      }
-
+  Html5Qrcode.getCameras().then(devices => {
+    if (devices.length){
       html5QrCode.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: 220 },
-        onScanSuccess,
-        function(){ }
-      ).catch(err => {
-        console.error(err);
-        byId("status").innerText = "❌ Camera start failed";
-      });
-    }).catch(err => {
-      console.error(err);
-      byId("status").innerText = "❌ Camera permission denied";
-    });
+        { fps: 10, qrbox: 250 },
+        onScanSuccess
+      );
+    }
   });
 }
-function getDeviceId() {
 
-  let id = localStorage.getItem("device_id");
-
-  if (!id) {
-    id = "DEV-" + Math.random().toString(36).substring(2) + Date.now();
-    localStorage.setItem("device_id", id);
-  }
-
-  return id;
-}
-  
-/* ================= ATTENDANCE SUBMIT ================= */
+/* ================= ATTENDANCE ================= */
 function onScanSuccess(decodedText){
+
   if (scanned) return;
   scanned = true;
 
   let qrData;
+
   try{
     qrData = JSON.parse(decodedText);
-  }catch(e){
-    byId("status").innerText = "❌ Invalid QR format";
+  }catch{
+    byId("status").innerText = "❌ Invalid QR";
     scanned = false;
     return;
   }
 
-  if (!qrData.session_id || !qrData.timestamp || !qrData.signature){
-    byId("status").innerText = "❌ Incomplete QR data";
-    scanned = false;
-    return;
-  }
+  const student = JSON.parse(localStorage.getItem("student"));
+  const device_id = getDeviceId();
 
-  const student = JSON.parse(localStorage.getItem("student") || "{}");
-  if (!student.id){
-    byId("status").innerText = "❌ Login expired";
-    scanned = false;
-    return;
-  }
+  byId("status").innerText = "Submitting...";
 
-  byId("status").innerText = "Submitting attendance...";
-
-  const cb = "handleAttendance_" + Date.now();
+  const cb = "att_" + Date.now();
 
   const url =
     API_URL +
     "?type=mark_attendance" +
-    "&student_id=" + encodeURIComponent(student.id) +
-    "&session_id=" + encodeURIComponent(qrData.session_id) +
-    "&token=" + encodeURIComponent(qrData.token || "") +
-    "&timestamp=" + encodeURIComponent(qrData.timestamp) +
-    "&signature=" + encodeURIComponent(qrData.signature);
+    "&student_id=" + student.id +
+    "&session_id=" + qrData.session_id +
+    "&token=" + qrData.token +
+    "&timestamp=" + qrData.timestamp +
+    "&signature=" + qrData.signature +
+    "&device_id=" + device_id;
 
-  jsonpRequest(
-    url,
-    cb,
-    function(res){
-      if (!res || !res.status){
-        byId("status").innerText = "❌ Invalid server response";
-        scanned = false;
-        return;
-      }
+  jsonpRequest(url, cb, function(res){
 
-      if (res.status === "success"){
-        byId("status").innerText = "✅ Attendance marked successfully";
-      } else if (res.status === "expired"){
-        byId("status").innerText = "⏱ QR expired";
-        scanned = false;
-        return;
-      } else if (res.status === "already_marked"){
-        byId("status").innerText = "⚠ Attendance already marked";
-      } else if (res.status === "invalid_qr"){
-        byId("status").innerText = "🚫 Unauthorized QR";
-        scanned = false;
-        return;
-      } else if (res.status === "student_not_found"){
-        byId("status").innerText = "❌ Student not found";
-        scanned = false;
-        return;
-      } else {
-        byId("status").innerText = "❌ " + (res.message || "Submission failed");
-        scanned = false;
-        return;
-      }
-
-      setTimeout(() => {
-        closeScanner();
-      }, 1200);
-    },
-    function(){
-      byId("status").innerText = "❌ Network/server error";
-      scanned = false;
+    if (res.status === "success"){
+      byId("status").innerText = "✅ Attendance Marked";
     }
-  );
+    else if (res.status === "device_used"){
+      byId("status").innerText = "🚫 Device already used";
+      scanned = false;
+      return;
+    }
+    else if (res.status === "already_marked"){
+      byId("status").innerText = "⚠ Already marked";
+    }
+    else if (res.status === "expired"){
+      byId("status").innerText = "⏱ QR expired";
+      scanned = false;
+      return;
+    }
+    else{
+      byId("status").innerText = "❌ Failed";
+      scanned = false;
+      return;
+    }
+
+    setTimeout(() => closeScanner(), 1200);
+
+  }, function(){
+    byId("status").innerText = "❌ Network error";
+    scanned = false;
+  });
 }
 
 /* ================= AUTO LOGIN ================= */
-window.onload = function(){
-  showDashboard();
-};
+window.onload = showDashboard;
+
 </script>
 
 </body>

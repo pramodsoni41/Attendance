@@ -43,6 +43,28 @@ button{
   font-size:16px;
   cursor:pointer;
 }
+  #welcomeBox h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #007bff;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #555;
+  margin: 5px 0 10px;
+}
+
+.desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.desc.small {
+  font-size: 12px;
+  color: #888;
+}
 button:hover{background:#0056b3;}
 .logout{background:#dc3545;}
 .logout:hover{background:#a71d2a;}
@@ -59,7 +81,25 @@ button:hover{background:#0056b3;}
 
   <!-- LOGIN -->
   <div id="loginSection">
-    <h2>Student Login</h2>
+    <div id="welcomeBox">
+  <h1>📘 Attendance Portal</h1>
+  <p class="subtitle">
+    Welcome to the Digital Attendance System
+  </p>
+
+  <p class="desc">
+    This platform enables seamless and secure attendance marking using QR-based verification.
+    Students can log in using their credentials and mark attendance instantly by scanning the session QR code.
+  </p>
+
+  <p class="desc small">
+    Designed for reliability, transparency, and ease of use in classroom environments.
+  </p>
+
+  <hr style="margin:15px 0;">
+</div>
+
+<h2>Student Login</h2>
     <input type="text" id="studentId" placeholder="Enter Student ID">
     <input type="password" id="password" placeholder="Enter Password">
     <button id="loginBtn" onclick="login()">Login</button>

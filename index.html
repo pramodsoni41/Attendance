@@ -5,7 +5,7 @@
 </head>
 <body>
 
-<h2>Dynamic QR (Refreshes every 10 sec)</h2>
+<h2>Dynamic QR (Refreshes every 5 sec)</h2>
 <canvas id="qr"></canvas>
 
 <script>
@@ -19,7 +19,7 @@ function generateQR() {
   QRCode.toCanvas(document.getElementById('qr'), JSON.stringify(data));
 }
 
-setInterval(generateQR, 10000);
+setInterval(generateQR, 5000);
 generateQR();
 </script>
 

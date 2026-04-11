@@ -3,29 +3,48 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbw6QQ5_r7nCW-aSPX69uxxIIfo_cw_l-6hMmN1HvBJoPGyP4PFOtqGT79UviKGENd4/exec";
 
 let ADMIN_PASS = "";
+let qrInterval = null;
 
-/* ================= LOAD ADMIN PASSWORD ================= */
-function loadAdminPass() {
+/* ================= SAFE JSONP ================= */
+function jsonpRequest(url, callbackName, onSuccess, onError) {
+
+  window[callbackName] = function(data) {
+    delete window[callbackName];
+    script.remove();
+    onSuccess(data);
+  };
 
   const script = document.createElement("script");
+  script.src = url + "&callback=" + callbackName;
 
-  script.src = `${API_URL}?type=get_admin_pass&callback=setAdminPass`;
-
-  script.onerror = () => {
-    alert("❌ Cannot connect to server");
+  script.onerror = function() {
+    delete window[callbackName];
+    script.remove();
+    if (onError) onError();
   };
 
   document.body.appendChild(script);
 }
 
-function setAdminPass(data) {
+/* ================= LOAD ADMIN PASSWORD ================= */
+function loadAdminPass() {
 
-  if (data.status === "success") {
-    ADMIN_PASS = data.pass;
-    askPassword();
-  } else {
-    alert("Cannot load admin config");
-  }
+  const cb = "admin_" + Date.now();
+
+  const url = `${API_URL}?type=get_admin_pass`;
+
+  jsonpRequest(url, cb, function(data) {
+
+    if (data.status === "success") {
+      ADMIN_PASS = data.pass;
+      askPassword();
+    } else {
+      alert("❌ Cannot load admin config");
+    }
+
+  }, function() {
+    alert("❌ Server connection failed");
+  });
 }
 
 /* ================= ASK PASSWORD ================= */
@@ -35,8 +54,16 @@ function askPassword() {
 
   if (input === ADMIN_PASS) {
 
-    document.getElementById("title").innerText = "Dynamic QR (Secure)";
-    document.getElementById("qr").style.display = "block";
+    const titleEl = document.getElementById("title");
+    const qrEl = document.getElementById("qr");
+
+    if (!titleEl || !qrEl) {
+      alert("❌ UI elements missing");
+      return;
+    }
+
+    titleEl.innerText = "Dynamic QR (Secure)";
+    qrEl.style.display = "block";
 
     startQR();
 
@@ -46,39 +73,48 @@ function askPassword() {
   }
 }
 
-/* ================= GET QR FROM SERVER ================= */
+/* ================= FETCH QR ================= */
 function fetchQR() {
 
-  const callbackName = "qr_" + Date.now();
+  const cb = "qr_" + Date.now();
 
-  window[callbackName] = function(data) {
+  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
 
-    delete window[callbackName];
+  jsonpRequest(url, cb, function(data) {
 
     if (data.status !== "success") {
-      alert("QR generation failed");
+      console.warn("QR generation failed");
       return;
     }
 
+    const qrCanvas = document.getElementById("qr");
+
+    if (!qrCanvas) return;
+
     QRCode.toCanvas(
-      document.getElementById('qr'),
+      qrCanvas,
       JSON.stringify(data.qr),
       { width: 600, margin: 2 }
     );
-  };
 
-  const script = document.createElement("script");
-  script.src = `${API_URL}?type=generate_qr&session_id=CE101&callback=${callbackName}`;
-  document.body.appendChild(script);
+  }, function() {
+    console.warn("QR fetch failed");
+  });
 }
 
 /* ================= LOOP ================= */
 function startQR() {
+
   fetchQR();
-  setInterval(fetchQR, 15000);
+
+  if (qrInterval) clearInterval(qrInterval);
+
+  qrInterval = setInterval(fetchQR, 15000);
 }
 
 /* ================= INIT ================= */
-loadAdminPass();
+document.addEventListener("DOMContentLoaded", function () {
+  loadAdminPass();
+});
 
 </script>

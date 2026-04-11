@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Attendance & Quiz Portal</title>
+<title>Attendance Portal</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script>
@@ -18,6 +18,7 @@ body {
   align-items: center;
   height: 100vh;
 }
+
 .container {
   background: white;
   padding: 25px;
@@ -26,6 +27,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   text-align: center;
 }
+
 h2 { margin-bottom: 15px; }
 
 input {
@@ -47,6 +49,7 @@ button {
   font-size: 16px;
   cursor: pointer;
 }
+
 button:hover { background: #0056b3; }
 
 .logout { background:#dc3545; }
@@ -74,7 +77,6 @@ button:hover { background: #0056b3; }
     <p id="userInfo"></p>
 
     <button onclick="goToScanner()">📷 Mark Attendance</button>
-    <button onclick="startQuiz()">📝 Start Quiz</button>
     <button class="logout" onclick="logout()">Logout</button>
   </div>
 
@@ -140,7 +142,7 @@ function showDashboard() {
   document.getElementById("dashboard").classList.remove("hidden");
 
   document.getElementById("userInfo").innerText =
-    student.name + " (" + student.id + ")";
+    `${student.name} (${student.id})`;
 }
 
 /* =========================
@@ -148,10 +150,6 @@ function showDashboard() {
 ========================= */
 function goToScanner() {
   window.location.href = "scanner.html";
-}
-
-function startQuiz() {
-  alert("Quiz will be unlocked after attendance");
 }
 
 /* =========================

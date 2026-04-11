@@ -22,6 +22,7 @@ body {
 #status {
   margin-top: 15px;
   font-weight: bold;
+  min-height: 24px;
 }
 </style>
 </head>
@@ -35,9 +36,10 @@ body {
 <div id="status"></div>
 
 <script>
+
 const API_URL = "https://script.google.com/macros/s/AKfycbyJI2f3EoP77l3SeEf8PhGDYBH3Mszn8b2twFYPsVwLhC7ta4wtwlRlH15demmqsBQ/exec";
 
-// ✅ Get logged-in student
+/* ================= LOGIN CHECK ================= */
 const student = JSON.parse(localStorage.getItem("student"));
 
 if (!student) {
@@ -45,30 +47,44 @@ if (!student) {
   window.location.href = "index.html";
 }
 
+/* ================= GLOBAL ================= */
 let scanned = false;
 let html5QrCode = new Html5Qrcode("reader");
 
-/* =========================
-   START CAMERA
-========================= */
-Html5Qrcode.getCameras().then(devices => {
+/* ================= START CAMERA ================= */
+Html5Qrcode.getCameras()
+.then(devices => {
+
+  console.log("CAMERAS:", devices);
+
   if (devices.length) {
+
     html5QrCode.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
+      {
+        fps: 10,
+        qrbox: 200   // 🔥 smaller = better detection
+      },
       onScanSuccess
     );
+
   } else {
-    alert("No camera found");
+    document.getElementById("status").innerText = "❌ No camera found";
   }
+
+})
+.catch(err => {
+  console.error("CAMERA ERROR:", err);
+  document.getElementById("status").innerText = "❌ Camera Error";
 });
 
-/* =========================
-   ON SCAN
-========================= */
+/* ================= ON SCAN ================= */
 function onScanSuccess(decodedText) {
 
-  console.log("SCANNED:", decodedText);
+  console.log("SCANNED RAW:", decodedText);
+
+  // 🔥 Debug alert (remove later)
+  alert("QR Detected");
 
   if (scanned) return;
   scanned = true;
@@ -79,15 +95,16 @@ function onScanSuccess(decodedText) {
     qrData = JSON.parse(decodedText);
   } catch (err) {
     console.log("PARSE ERROR:", err);
-    document.getElementById("status").innerText = "❌ Invalid QR";
+    document.getElementById("status").innerText = "❌ Invalid QR Format";
     scanned = false;
     return;
   }
 
+  console.log("QR DATA:", qrData);
+
   document.getElementById("status").innerText = "Submitting...";
 
-  const student = JSON.parse(localStorage.getItem("student"));
-
+  /* ================= API CALL ================= */
   fetch(API_URL, {
     method: "POST",
     headers: {
@@ -103,25 +120,40 @@ function onScanSuccess(decodedText) {
   })
   .then(res => res.json())
   .then(res => {
+
     console.log("SERVER RESPONSE:", res);
 
     if (res.status === "success") {
       document.getElementById("status").innerText = "✅ Attendance Marked";
-    } else if (res.status === "invalid_qr") {
-      document.getElementById("status").innerText = "🚫 Invalid QR";
+    } 
+    else if (res.status === "expired") {
+      document.getElementById("status").innerText = "⏱ QR Expired";
       scanned = false;
       return;
-    } else {
+    }
+    else if (res.status === "already_marked") {
+      document.getElementById("status").innerText = "⚠ Already Marked";
+    }
+    else if (res.status === "invalid_qr") {
+      document.getElementById("status").innerText = "🚫 Unauthorized QR";
+      scanned = false;
+      return;
+    } 
+    else {
       document.getElementById("status").innerText = "❌ Failed";
       scanned = false;
       return;
     }
 
+    /* ================= STOP CAMERA ================= */
     if (html5QrCode) {
-      html5QrCode.stop().then(() => {
-        scannerSection.classList.add("hidden");
-        dashboard.classList.remove("hidden");
-      });
+      html5QrCode.stop()
+        .then(() => {
+          console.log("Scanner stopped");
+        })
+        .catch(err => {
+          console.log("Stop error:", err);
+        });
     }
 
   })
@@ -132,28 +164,6 @@ function onScanSuccess(decodedText) {
   });
 }
 
-/* =========================
-   HANDLE RESPONSE
-========================= */
-function handleAttendance(res) {
-
-  if (res.status === "success") {
-    document.getElementById("status").innerText = "✅ Attendance Marked";
-  } 
-  else if (res.status === "expired") {
-    document.getElementById("status").innerText = "⏱ QR Expired";
-    scanned = false;
-  } 
-  else if (res.status === "already_marked") {
-    document.getElementById("status").innerText = "⚠ Already Marked";
-  } 
-  else {
-    document.getElementById("status").innerText = "❌ Failed";
-    scanned = false;
-  }
-
-  html5QrCode.stop().catch(()=>{});
-}
 </script>
 
 </body>

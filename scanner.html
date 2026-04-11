@@ -1,31 +1,114 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+<meta charset="UTF-8">
+<title>Scan Attendance</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body {
+  font-family: Arial;
+  text-align: center;
+  background: #f4f6f8;
+}
+
+#reader {
+  width: 300px;
+  margin: auto;
+}
+
+#status {
+  margin-top: 15px;
+  font-weight: bold;
+}
+</style>
 </head>
+
 <body>
 
 <h3>Scan QR to Mark Attendance</h3>
-<div id="reader" style="width:300px;"></div>
+<p>Allow camera access to continue</p>
+
+<div id="reader"></div>
+<div id="status"></div>
 
 <script>
-const student_id = prompt("Enter your ID");
-const scriptURL = "https://script.google.com/macros/s/AKfycbxv5bdGLljr5LI_hzQb092Kh1K3Y4nkmiS116Xi8C1yPwrRrNm1cLwTxbN1-Yn7ZV8/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyJI2f3EoP77l3SeEf8PhGDYBH3Mszn8b2twFYPsVwLhC7ta4wtwlRlH15demmqsBQ/exec";
 
-function onScanSuccess(decodedText) {
-  const data = JSON.parse(decodedText);
-  data.student_id = student_id;
+// ✅ Get logged-in student
+const student = JSON.parse(localStorage.getItem("student"));
 
-  fetch(scriptURL, {
-    method: "POST",
-    body: JSON.stringify(data)
-  })
-  .then(res => res.json())
-  .then(res => alert(res.status));
+if (!student) {
+  alert("Login first");
+  window.location.href = "index.html";
 }
 
-new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 })
-  .render(onScanSuccess);
+// 🚫 prevent multiple scans
+let scanned = false;
+
+const scanner = new Html5QrcodeScanner("reader", {
+  fps: 10,
+  qrbox: 250
+});
+
+function onScanSuccess(decodedText) {
+
+  if (scanned) return;   // prevent repeat
+  scanned = true;
+
+  let qrData;
+
+  try {
+    qrData = JSON.parse(decodedText);
+  } catch {
+    document.getElementById("status").innerText = "❌ Invalid QR";
+    scanned = false;
+    return;
+  }
+
+  document.getElementById("status").innerText = "Submitting...";
+
+  fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: student.id,
+      session_id: qrData.session_id,
+      token: qrData.token,
+      timestamp: qrData.timestamp
+    })
+  })
+  .then(res => res.json())
+  .then(res => {
+
+    if (res.status === "success") {
+      document.getElementById("status").innerText = "✅ Attendance Marked";
+    } 
+    else if (res.status === "expired") {
+      document.getElementById("status").innerText = "⏱ QR Expired";
+      scanned = false;
+    } 
+    else if (res.status === "already_marked") {
+      document.getElementById("status").innerText = "⚠ Already Marked";
+    } 
+    else {
+      document.getElementById("status").innerText = "❌ Failed";
+      scanned = false;
+    }
+
+    scanner.clear(); // stop camera
+
+  })
+  .catch(err => {
+    console.error(err);
+    document.getElementById("status").innerText = "Network Error";
+    scanned = false;
+  });
+}
+
+// Start scanner
+scanner.render(onScanSuccess);
 </script>
 
 </body>

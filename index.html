@@ -7,70 +7,72 @@
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 
-<script>
-const API_URL = "https://script.google.com/macros/s/AKfycbxzg-szei52PL9ZKWgwRZDnLLG-1K5ccMTYRYqKb9acZBemn034VmcDI6gSYHtnvz8/exec";
-</script>
-
 <style>
-body {
+body{
   font-family: Arial, sans-serif;
-  background: #f4f6f8;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
+  background:#f4f6f8;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  margin:0;
+  padding:20px;
+  box-sizing:border-box;
 }
-
-.container {
-  background: white;
-  padding: 25px;
-  border-radius: 10px;
-  width: 320px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  text-align: center;
+.container{
+  background:#fff;
+  padding:25px;
+  border-radius:12px;
+  width:350px;
+  max-width:100%;
+  box-shadow:0 4px 14px rgba(0,0,0,0.12);
+  text-align:center;
 }
-
-h2 { margin-bottom: 15px; }
-
-input {
-  width: 100%;
-  padding: 10px;
-  margin: 8px 0;
-  border: 1px solid #ccc;
-  border-radius: 6px;
+h2,h3{margin-top:0;}
+input{
+  width:100%;
+  padding:10px;
+  margin:8px 0;
+  border:1px solid #ccc;
+  border-radius:6px;
+  box-sizing:border-box;
+  font-size:15px;
 }
-
-button {
-  width: 100%;
-  padding: 12px;
-  margin-top: 10px;
-  border: none;
-  border-radius: 6px;
-  background: #007bff;
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
+button{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border:none;
+  border-radius:6px;
+  background:#007bff;
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
 }
-
-button:hover { background: #0056b3; }
-
-.logout { background:#dc3545; }
-.logout:hover { background:#a71d2a; }
-
-.hidden { display: none; }
-
-#reader {
-  width: 280px;
-  margin: auto;
+button:hover{background:#0056b3;}
+.logout{background:#dc3545;}
+.logout:hover{background:#a71d2a;}
+.secondary{background:#6c757d;}
+.secondary:hover{background:#545b62;}
+.hidden{display:none;}
+#reader{
+  width:100%;
+  max-width:280px;
+  margin:10px auto;
 }
-
-#status {
-  margin-top: 10px;
-  font-weight: bold;
+#status{
+  margin-top:10px;
+  font-weight:bold;
+  min-height:24px;
+  word-break:break-word;
+}
+.small{
+  font-size:13px;
+  color:#666;
+  margin-top:8px;
 }
 </style>
 </head>
-
 <body>
 
 <div class="container">
@@ -81,13 +83,13 @@ button:hover { background: #0056b3; }
     <input type="text" id="studentId" placeholder="Enter Student ID">
     <input type="password" id="password" placeholder="Enter Password">
     <button id="loginBtn" onclick="login()">Login</button>
+    <div class="small">Login first, then scan the attendance QR</div>
   </div>
 
   <!-- DASHBOARD -->
   <div id="dashboard" class="hidden">
     <h2>Welcome</h2>
     <p id="userInfo"></p>
-
     <button onclick="openScanner()">📷 Mark Attendance</button>
     <button class="logout" onclick="logout()">Logout</button>
   </div>
@@ -97,193 +99,264 @@ button:hover { background: #0056b3; }
     <h3>Scan QR</h3>
     <div id="reader"></div>
     <div id="status"></div>
-    <button onclick="closeScanner()">⬅ Back</button>
+    <button class="secondary" onclick="closeScanner()">⬅ Back</button>
   </div>
 
 </div>
 
 <script>
+const API_URL = "https://script.google.com/macros/s/AKfycbwKYuFF9AGWcDQYrEuBImWzKEY268yPxcdexwG3_sECca6zvdx3g31zooImNo3J3Lo/exec";
+
+let html5QrCode = null;
+let scanned = false;
+
+/* ================= HELPERS ================= */
+function byId(id){
+  return document.getElementById(id);
+}
+
+function cleanupJsonp(callbackName){
+  try { delete window[callbackName]; } catch(e) {}
+  const old = document.getElementById(callbackName);
+  if (old) old.remove();
+}
+
+function jsonpRequest(url, callbackName, onSuccess, onError){
+  cleanupJsonp(callbackName);
+
+  window[callbackName] = function(data){
+    cleanupJsonp(callbackName);
+    onSuccess(data);
+  };
+
+  const script = document.createElement("script");
+  script.id = callbackName;
+  script.src = url + (url.includes("?") ? "&" : "?") + "callback=" + encodeURIComponent(callbackName);
+
+  script.onerror = function(){
+    cleanupJsonp(callbackName);
+    if (onError) onError();
+  };
+
+  document.body.appendChild(script);
+}
 
 /* ================= LOGIN ================= */
-function login() {
-  const id = studentId.value.trim();
-  const pass = password.value.trim();
-  const btn = loginBtn;
+function login(){
+  const id = byId("studentId").value.trim();
+  const pass = byId("password").value.trim();
+  const btn = byId("loginBtn");
 
-  if (!id || !pass) {
+  if (!id || !pass){
     alert("Enter ID and Password");
     return;
   }
 
-  btn.innerText = "Logging in...";
   btn.disabled = true;
+  btn.innerText = "Logging in...";
 
-  const script = document.createElement("script");
+  const cb = "handleLogin_" + Date.now();
 
-  script.src = `${API_URL}?type=login&id=${encodeURIComponent(id)}&pass=${encodeURIComponent(pass)}&callback=handleLogin`;
+  const url =
+    API_URL +
+    "?type=login" +
+    "&id=" + encodeURIComponent(id) +
+    "&pass=" + encodeURIComponent(pass);
 
-  script.onerror = () => {
-    alert("Network error");
-    btn.innerText = "Login";
-    btn.disabled = false;
-  };
+  jsonpRequest(
+    url,
+    cb,
+    function(data){
+      btn.disabled = false;
+      btn.innerText = "Login";
 
-  script.onload = () => script.remove();
-  document.body.appendChild(script);
-}
-
-function handleLogin(data) {
-  loginBtn.innerText = "Login";
-  loginBtn.disabled = false;
-
-  if (data.status === "success") {
-    localStorage.setItem("student", JSON.stringify(data.student));
-    showDashboard();
-  } else {
-    alert("Invalid ID or Password");
-  }
+      if (data && data.status === "success"){
+        localStorage.setItem("student", JSON.stringify(data.student));
+        showDashboard();
+      } else {
+        alert("Invalid ID or Password");
+      }
+    },
+    function(){
+      btn.disabled = false;
+      btn.innerText = "Login";
+      alert("Network error while login");
+    }
+  );
 }
 
 /* ================= DASHBOARD ================= */
-function showDashboard() {
-  const student = JSON.parse(localStorage.getItem("student"));
-  if (!student) return;
+function showDashboard(){
+  const studentRaw = localStorage.getItem("student");
+  if (!studentRaw) return;
 
-  loginSection.classList.add("hidden");
-  dashboard.classList.remove("hidden");
+  const student = JSON.parse(studentRaw);
 
-  userInfo.innerText = `${student.name} (${student.id})`;
+  byId("loginSection").classList.add("hidden");
+  byId("dashboard").classList.remove("hidden");
+  byId("scannerSection").classList.add("hidden");
+
+  byId("userInfo").innerText = student.name + " (" + student.id + ")";
 }
 
-/* ================= SCANNER ================= */
-let html5QrCode;
-let scanned = false;
-
-function openScanner() {
-  dashboard.classList.add("hidden");
-  scannerSection.classList.remove("hidden");
-  startScanner();
-}
-
-function closeScanner() {
-  if (html5QrCode) {
-    html5QrCode.stop()
-      .then(() => {
-        scannerSection.classList.add("hidden");
-        dashboard.classList.remove("hidden");
-      })
-      .catch(() => {
-        scannerSection.classList.add("hidden");
-        dashboard.classList.remove("hidden");
-      });
-  }
-}
-
-function startScanner() {
-  const student = JSON.parse(localStorage.getItem("student"));
-  if (!student) {
-    alert("Login first");
-    return;
-  }
-
-  scanned = false;
-  html5QrCode = new Html5Qrcode("reader");
-
-  Html5Qrcode.getCameras().then(devices => {
-    if (devices.length) {
-      html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        onScanSuccess
-      );
-    }
-  });
-}
-
-/* ================= ATTENDANCE ================= */
-function onScanSuccess(decodedText) {
-
-  if (scanned) return;
-  scanned = true;
-
-  let qrData;
-
-  try {
-    qrData = JSON.parse(decodedText);
-  } catch {
-    status.innerText = "❌ Invalid QR";
-    scanned = false;
-    return;
-  }
-
-  status.innerText = "Submitting...";
-
-  const student = JSON.parse(localStorage.getItem("student"));
-
-  fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      student_id: student.id,
-      session_id: qrData.session_id,
-      token: qrData.token,
-      timestamp: qrData.timestamp,
-      signature: qrData.signature   // ✅ IMPORTANT
-    })
-  })
-  .then(res => res.json())
-  .then(res => {
-
-    if (res.status === "success") {
-      status.innerText = "✅ Attendance Marked";
-    } else if (res.status === "expired") {
-      status.innerText = "⏱ QR Expired";
-      scanned = false;
-      return;
-    } else if (res.status === "already_marked") {
-      status.innerText = "⚠ Already Marked";
-    } else if (res.status === "invalid_qr") {
-      status.innerText = "🚫 Unauthorized QR";
-      scanned = false;
-      return;
-    } else {
-      status.innerText = "❌ Failed";
-      scanned = false;
-      return;
-    }
-
-    // ✅ STOP CAMERA PROPERLY
-    if (html5QrCode) {
-      html5QrCode.stop()
-        .then(() => {
-          scannerSection.classList.add("hidden");
-          dashboard.classList.remove("hidden");
-        })
-        .catch(() => {
-          scannerSection.classList.add("hidden");
-          dashboard.classList.remove("hidden");
-        });
-    }
-
-  })
-  .catch(err => {
-    console.error(err);
-    status.innerText = "❌ Network Error";
-    scanned = false;
-  });
-}
-
-/* ================= LOGOUT ================= */
-function logout() {
+function logout(){
+  stopScannerSilently();
   localStorage.removeItem("student");
   location.reload();
 }
 
-/* ================= AUTO LOGIN ================= */
-window.onload = showDashboard;
+/* ================= SCANNER ================= */
+function openScanner(){
+  const studentRaw = localStorage.getItem("student");
+  if (!studentRaw){
+    alert("Login first");
+    return;
+  }
 
+  byId("dashboard").classList.add("hidden");
+  byId("scannerSection").classList.remove("hidden");
+  byId("status").innerText = "";
+  startScanner();
+}
+
+function closeScanner(){
+  stopScannerSilently().finally(() => {
+    byId("scannerSection").classList.add("hidden");
+    byId("dashboard").classList.remove("hidden");
+    byId("status").innerText = "";
+  });
+}
+
+function stopScannerSilently(){
+  if (html5QrCode){
+    return html5QrCode.stop()
+      .then(() => {
+        try { html5QrCode.clear(); } catch(e) {}
+        html5QrCode = null;
+      })
+      .catch(() => {
+        try { html5QrCode.clear(); } catch(e) {}
+        html5QrCode = null;
+      });
+  }
+  return Promise.resolve();
+}
+
+function startScanner(){
+  scanned = false;
+
+  stopScannerSilently().then(() => {
+    html5QrCode = new Html5Qrcode("reader");
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (!devices || !devices.length){
+        byId("status").innerText = "❌ No camera found";
+        return;
+      }
+
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 220 },
+        onScanSuccess,
+        function(){ }
+      ).catch(err => {
+        console.error(err);
+        byId("status").innerText = "❌ Camera start failed";
+      });
+    }).catch(err => {
+      console.error(err);
+      byId("status").innerText = "❌ Camera permission denied";
+    });
+  });
+}
+
+/* ================= ATTENDANCE SUBMIT ================= */
+function onScanSuccess(decodedText){
+  if (scanned) return;
+  scanned = true;
+
+  let qrData;
+  try{
+    qrData = JSON.parse(decodedText);
+  }catch(e){
+    byId("status").innerText = "❌ Invalid QR format";
+    scanned = false;
+    return;
+  }
+
+  if (!qrData.session_id || !qrData.timestamp || !qrData.signature){
+    byId("status").innerText = "❌ Incomplete QR data";
+    scanned = false;
+    return;
+  }
+
+  const student = JSON.parse(localStorage.getItem("student") || "{}");
+  if (!student.id){
+    byId("status").innerText = "❌ Login expired";
+    scanned = false;
+    return;
+  }
+
+  byId("status").innerText = "Submitting attendance...";
+
+  const cb = "handleAttendance_" + Date.now();
+
+  const url =
+    API_URL +
+    "?type=mark_attendance" +
+    "&student_id=" + encodeURIComponent(student.id) +
+    "&session_id=" + encodeURIComponent(qrData.session_id) +
+    "&token=" + encodeURIComponent(qrData.token || "") +
+    "&timestamp=" + encodeURIComponent(qrData.timestamp) +
+    "&signature=" + encodeURIComponent(qrData.signature);
+
+  jsonpRequest(
+    url,
+    cb,
+    function(res){
+      if (!res || !res.status){
+        byId("status").innerText = "❌ Invalid server response";
+        scanned = false;
+        return;
+      }
+
+      if (res.status === "success"){
+        byId("status").innerText = "✅ Attendance marked successfully";
+      } else if (res.status === "expired"){
+        byId("status").innerText = "⏱ QR expired";
+        scanned = false;
+        return;
+      } else if (res.status === "already_marked"){
+        byId("status").innerText = "⚠ Attendance already marked";
+      } else if (res.status === "invalid_qr"){
+        byId("status").innerText = "🚫 Unauthorized QR";
+        scanned = false;
+        return;
+      } else if (res.status === "student_not_found"){
+        byId("status").innerText = "❌ Student not found";
+        scanned = false;
+        return;
+      } else {
+        byId("status").innerText = "❌ " + (res.message || "Submission failed");
+        scanned = false;
+        return;
+      }
+
+      setTimeout(() => {
+        closeScanner();
+      }, 1200);
+    },
+    function(){
+      byId("status").innerText = "❌ Network/server error";
+      scanned = false;
+    }
+  );
+}
+
+/* ================= AUTO LOGIN ================= */
+window.onload = function(){
+  showDashboard();
+};
 </script>
 
 </body>

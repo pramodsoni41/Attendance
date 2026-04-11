@@ -5,6 +5,8 @@
 <title>Attendance Portal</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<script src="https://unpkg.com/html5-qrcode"></script>
+
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbyJI2f3EoP77l3SeEf8PhGDYBH3Mszn8b2twFYPsVwLhC7ta4wtwlRlH15demmqsBQ/exec";
 </script>
@@ -56,6 +58,16 @@ button:hover { background: #0056b3; }
 .logout:hover { background:#a71d2a; }
 
 .hidden { display: none; }
+
+#reader {
+  width: 280px;
+  margin: auto;
+}
+
+#status {
+  margin-top: 10px;
+  font-weight: bold;
+}
 </style>
 </head>
 
@@ -76,15 +88,23 @@ button:hover { background: #0056b3; }
     <h2>Welcome</h2>
     <p id="userInfo"></p>
 
-    <button onclick="goToScanner()">📷 Mark Attendance</button>
+    <button onclick="openScanner()">📷 Mark Attendance</button>
     <button class="logout" onclick="logout()">Logout</button>
+  </div>
+
+  <!-- SCANNER -->
+  <div id="scannerSection" class="hidden">
+    <h3>Scan QR</h3>
+    <div id="reader"></div>
+    <div id="status"></div>
+    <button onclick="closeScanner()">⬅ Back</button>
   </div>
 
 </div>
 
 <script>
 /* =========================
-   LOGIN (JSONP - CORS SAFE)
+   LOGIN (JSONP)
 ========================= */
 function login() {
   const id = document.getElementById("studentId").value.trim();
@@ -103,7 +123,7 @@ function login() {
 
   script.src = `${API_URL}?type=login&id=${encodeURIComponent(id)}&pass=${encodeURIComponent(pass)}&callback=handleLogin`;
 
-  script.onerror = function() {
+  script.onerror = () => {
     alert("Network error");
     btn.innerText = "Login";
     btn.disabled = false;
@@ -114,9 +134,6 @@ function login() {
   document.body.appendChild(script);
 }
 
-/* =========================
-   HANDLE LOGIN RESPONSE
-========================= */
 function handleLogin(data) {
   const btn = document.getElementById("loginBtn");
 
@@ -146,10 +163,100 @@ function showDashboard() {
 }
 
 /* =========================
-   NAVIGATION
+   SCANNER
 ========================= */
-function goToScanner() {
-  window.location.href = "scanner.html";
+let html5QrCode;
+let scanned = false;
+
+function openScanner() {
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("scannerSection").classList.remove("hidden");
+
+  startScanner();
+}
+
+function closeScanner() {
+  if (html5QrCode) {
+    html5QrCode.stop().catch(()=>{});
+  }
+
+  document.getElementById("scannerSection").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+}
+
+function startScanner() {
+  const student = JSON.parse(localStorage.getItem("student"));
+  if (!student) {
+    alert("Login first");
+    return;
+  }
+
+  scanned = false;
+  html5QrCode = new Html5Qrcode("reader");
+
+  Html5Qrcode.getCameras().then(devices => {
+    if (devices.length) {
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        onScanSuccess
+      );
+    } else {
+      alert("No camera found");
+    }
+  });
+}
+
+function onScanSuccess(decodedText) {
+  if (scanned) return;
+  scanned = true;
+
+  let qrData;
+
+  try {
+    qrData = JSON.parse(decodedText);
+  } catch {
+    document.getElementById("status").innerText = "❌ Invalid QR";
+    scanned = false;
+    return;
+  }
+
+  document.getElementById("status").innerText = "Submitting...";
+
+  const student = JSON.parse(localStorage.getItem("student"));
+
+  fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: student.id,
+      session_id: qrData.session_id,
+      token: qrData.token,
+      timestamp: qrData.timestamp
+    })
+  })
+  .then(res => res.json())
+  .then(res => {
+
+    if (res.status === "success") {
+      document.getElementById("status").innerText = "✅ Attendance Marked";
+    } else if (res.status === "expired") {
+      document.getElementById("status").innerText = "⏱ QR Expired";
+      scanned = false;
+    } else if (res.status === "already_marked") {
+      document.getElementById("status").innerText = "⚠ Already Marked";
+    } else {
+      document.getElementById("status").innerText = "❌ Failed";
+      scanned = false;
+    }
+
+    html5QrCode.stop();
+
+  })
+  .catch(err => {
+    console.error(err);
+    document.getElementById("status").innerText = "Network Error";
+    scanned = false;
+  });
 }
 
 /* =========================

@@ -98,7 +98,11 @@ async function login() {
     const url = `${API_URL}?type=login&id=${encodeURIComponent(id)}&pass=${encodeURIComponent(pass)}`;
     
     const res = await fetch(url);
-    const data = await res.json();
+
+    const text = await res.text();   // 👈 DEBUG
+    console.log("RAW RESPONSE:", text);
+
+    const data = JSON.parse(text);
 
     if (data.status === "success") {
       localStorage.setItem("student", JSON.stringify(data.student));

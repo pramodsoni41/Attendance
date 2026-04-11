@@ -113,12 +113,33 @@ function jsonpRequest(url, callbackName, onSuccess, onError){
 
 /* ================= DEVICE ID ================= */
 function getDeviceId() {
-  let id = localStorage.getItem("device_id");
-  if (!id) {
-    id = "DEV-" + Math.random().toString(36).substring(2) + Date.now();
-    localStorage.setItem("device_id", id);
+
+  const EXPIRY_MINUTES = 40; // change to 30–40 as needed
+  const now = Date.now();
+
+  let stored = localStorage.getItem("device_data");
+
+  if (stored) {
+    try {
+      stored = JSON.parse(stored);
+
+      const age = (now - stored.timestamp) / (1000 * 60);
+
+      if (age < EXPIRY_MINUTES) {
+        return stored.id; // valid
+      }
+    } catch(e) {}
   }
-  return id;
+
+  // generate new device id
+  const newId = "DEV-" + Math.random().toString(36).substring(2) + now;
+
+  localStorage.setItem("device_data", JSON.stringify({
+    id: newId,
+    timestamp: now
+  }));
+
+  return newId;
 }
 
 /* ================= LOGIN ================= */

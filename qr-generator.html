@@ -1,20 +1,7 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-</head>
-
-<body style="text-align:center; font-family:Arial;">
-
-<h2 id="title">Admin Access Required</h2>
-
-<canvas id="qr" style="display:none;"></canvas>
-
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbxzg-szei52PL9ZKWgwRZDnLLG-1K5ccMTYRYqKb9acZBemn034VmcDI6gSYHtnvz8/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwKYuFF9AGWcDQYrEuBImWzKEY268yPxcdexwG3_sECca6zvdx3g31zooImNo3J3Lo/exec";
 
-let SECRET = "";
 let ADMIN_PASS = "";
 
 /* ================= LOAD ADMIN PASSWORD ================= */
@@ -47,85 +34,51 @@ function askPassword() {
   const input = prompt("Enter Admin Password:");
 
   if (input === ADMIN_PASS) {
+
     document.getElementById("title").innerText = "Dynamic QR (Secure)";
     document.getElementById("qr").style.display = "block";
 
-    loadSecret();   // 🔥 continue only after correct password
+    startQR();
+
   } else {
     alert("❌ Access Denied");
     document.body.innerHTML = "<h2>Unauthorized Access</h2>";
   }
 }
 
-/* ================= LOAD SECRET ================= */
-function loadSecret() {
+/* ================= GET QR FROM SERVER ================= */
+function fetchQR() {
 
-  const script = document.createElement("script");
+  const callbackName = "qr_" + Date.now();
 
-  script.src = `${API_URL}?type=get_secret_key&callback=setSecret`;
+  window[callbackName] = function(data) {
 
-  document.body.appendChild(script);
-}
+    delete window[callbackName];
 
-function setSecret(data) {
+    if (data.status !== "success") {
+      alert("QR generation failed");
+      return;
+    }
 
-  if (data.status === "success") {
-    SECRET = data.secret;
-    startQR();
-  } else {
-    alert("Secret load failed");
-  }
-}
-
-/* ================= HASH ================= */
-async function sha256(str) {
-  const buffer = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(str)
-  );
-
-  return Array.from(new Uint8Array(buffer))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/* ================= GENERATE QR ================= */
-async function generateQR() {
-
-  const session_id = "CE101";
-  const timestamp = Date.now();
-  const token = Math.random().toString(36).substring(2,8);
-
-  const raw = session_id + "|" + timestamp + "|" + SECRET;
-  const signature = await sha256(raw);
-
-  const data = {
-    session_id,
-    timestamp,
-    token,
-    signature
+    QRCode.toCanvas(
+      document.getElementById('qr'),
+      JSON.stringify(data.qr),
+      { width: 600, margin: 2 }
+    );
   };
 
-  QRCode.toCanvas(
-    document.getElementById('qr'),
-    JSON.stringify(data),
-    {
-      width: 600,
-      margin: 2
-    }
-  );
+  const script = document.createElement("script");
+  script.src = `${API_URL}?type=generate_qr&session_id=CE101&callback=${callbackName}`;
+  document.body.appendChild(script);
 }
 
 /* ================= LOOP ================= */
 function startQR() {
-  generateQR();
-  setInterval(generateQR, 15000);
+  fetchQR();
+  setInterval(fetchQR, 15000);
 }
 
 /* ================= INIT ================= */
 loadAdminPass();
 
 </script>
-
-</body>
-</html>

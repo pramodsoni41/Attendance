@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <title>Attendance & Quiz Portal</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script>
+
+<script>
 const API_URL = "https://script.google.com/macros/s/AKfycbxv5bdGLljr5LI_hzQb092Kh1K3Y4nkmiS116Xi8C1yPwrRrNm1cLwTxbN1-Yn7ZV8/exec";
 </script>
+
 <style>
 body {
   font-family: Arial, sans-serif;
@@ -24,10 +26,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   text-align: center;
 }
-
-h2 {
-  margin-bottom: 15px;
-}
+h2 { margin-bottom: 15px; }
 
 input {
   width: 100%;
@@ -48,14 +47,12 @@ button {
   font-size: 16px;
   cursor: pointer;
 }
+button:hover { background: #0056b3; }
 
-button:hover {
-  background: #0056b3;
-}
+.logout { background:#dc3545; }
+.logout:hover { background:#a71d2a; }
 
-.hidden {
-  display: none;
-}
+.hidden { display: none; }
 </style>
 </head>
 
@@ -63,12 +60,12 @@ button:hover {
 
 <div class="container">
 
-  <!-- LOGIN SECTION -->
+  <!-- LOGIN -->
   <div id="loginSection">
     <h2>Student Login</h2>
-    <input type="text" id="studentId" placeholder="Enter Student ID" required>
-    <input type="password" id="password" placeholder="Enter Password" required>
-    <button onclick="login()">Login</button>
+    <input type="text" id="studentId" placeholder="Enter Student ID">
+    <input type="password" id="password" placeholder="Enter Password">
+    <button id="loginBtn" onclick="login()">Login</button>
   </div>
 
   <!-- DASHBOARD -->
@@ -78,48 +75,65 @@ button:hover {
 
     <button onclick="goToScanner()">📷 Mark Attendance</button>
     <button onclick="startQuiz()">📝 Start Quiz</button>
-
-    <button onclick="logout()" style="background:#dc3545;">Logout</button>
+    <button class="logout" onclick="logout()">Logout</button>
   </div>
 
 </div>
 
 <script>
-async function login() {
+/* =========================
+   LOGIN (JSONP - CORS SAFE)
+========================= */
+function login() {
   const id = document.getElementById("studentId").value.trim();
   const pass = document.getElementById("password").value.trim();
+  const btn = document.getElementById("loginBtn");
 
   if (!id || !pass) {
     alert("Enter ID and Password");
     return;
   }
 
-  try {
-    const url = `${API_URL}?type=login&id=${encodeURIComponent(id)}&pass=${encodeURIComponent(pass)}`;
-    
-    const res = await fetch(url);
+  btn.innerText = "Logging in...";
+  btn.disabled = true;
 
-    const text = await res.text();   // 👈 DEBUG
-    console.log("RAW RESPONSE:", text);
+  const script = document.createElement("script");
 
-    const data = JSON.parse(text);
+  script.src = `${API_URL}?type=login&id=${encodeURIComponent(id)}&pass=${encodeURIComponent(pass)}&callback=handleLogin`;
 
-    if (data.status === "success") {
-      localStorage.setItem("student", JSON.stringify(data.student));
-      showDashboard();
-    } else {
-      alert("Invalid ID or Password");
-    }
+  script.onerror = function() {
+    alert("Network error");
+    btn.innerText = "Login";
+    btn.disabled = false;
+  };
 
-  } catch (err) {
-    console.error(err);
-    alert("Login error");
+  script.onload = () => script.remove();
+
+  document.body.appendChild(script);
+}
+
+/* =========================
+   HANDLE LOGIN RESPONSE
+========================= */
+function handleLogin(data) {
+  const btn = document.getElementById("loginBtn");
+
+  btn.innerText = "Login";
+  btn.disabled = false;
+
+  if (data.status === "success") {
+    localStorage.setItem("student", JSON.stringify(data.student));
+    showDashboard();
+  } else {
+    alert("Invalid ID or Password");
   }
 }
 
+/* =========================
+   DASHBOARD
+========================= */
 function showDashboard() {
   const student = JSON.parse(localStorage.getItem("student"));
-
   if (!student) return;
 
   document.getElementById("loginSection").classList.add("hidden");
@@ -129,21 +143,28 @@ function showDashboard() {
     student.name + " (" + student.id + ")";
 }
 
+/* =========================
+   NAVIGATION
+========================= */
 function goToScanner() {
   window.location.href = "scanner.html";
 }
 
 function startQuiz() {
-  alert("Quiz will be unlocked after attendance (next step)");
-  // later: redirect to quiz page
+  alert("Quiz will be unlocked after attendance");
 }
 
+/* =========================
+   LOGOUT
+========================= */
 function logout() {
   localStorage.removeItem("student");
   location.reload();
 }
 
-// Auto login if already stored
+/* =========================
+   AUTO LOGIN
+========================= */
 window.onload = showDashboard;
 </script>
 

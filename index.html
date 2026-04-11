@@ -176,12 +176,21 @@ function openScanner() {
 }
 
 function closeScanner() {
-  if (html5QrCode) {
-    html5QrCode.stop().catch(()=>{});
-  }
 
-  document.getElementById("scannerSection").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
+  if (html5QrCode) {
+    html5QrCode.stop()
+      .then(() => {
+        document.getElementById("scannerSection").classList.add("hidden");
+        document.getElementById("dashboard").classList.remove("hidden");
+      })
+      .catch(() => {
+        document.getElementById("scannerSection").classList.add("hidden");
+        document.getElementById("dashboard").classList.remove("hidden");
+      });
+  } else {
+    document.getElementById("scannerSection").classList.add("hidden");
+    document.getElementById("dashboard").classList.remove("hidden");
+  }
 }
 
 function startScanner() {
@@ -249,7 +258,18 @@ function onScanSuccess(decodedText) {
       scanned = false;
     }
 
-    html5QrCode.stop();
+    if (html5QrCode) {
+  html5QrCode.stop()
+    .then(() => {
+      document.getElementById("scannerSection").classList.add("hidden");
+      document.getElementById("dashboard").classList.remove("hidden");
+    })
+    .catch(() => {
+      // fallback
+      document.getElementById("scannerSection").classList.add("hidden");
+      document.getElementById("dashboard").classList.remove("hidden");
+    });
+}
 
   })
   .catch(err => {

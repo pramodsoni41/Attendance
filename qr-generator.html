@@ -6,32 +6,78 @@
 
 <body style="text-align:center; font-family:Arial;">
 
-<h2>Dynamic QR (Secure)</h2>
+<h2 id="title">Admin Access Required</h2>
 
-<canvas id="qr"></canvas>
+<canvas id="qr" style="display:none;"></canvas>
 
 <script>
 
-const API_URL = "YOUR_GS_URL";
+const API_URL = "https://script.google.com/macros/s/AKfycbxzg-szei52PL9ZKWgwRZDnLLG-1K5ccMTYRYqKb9acZBemn034VmcDI6gSYHtnvz8/exec";
+
 let SECRET = "";
+let ADMIN_PASS = "";
+
+/* ================= LOAD ADMIN PASSWORD ================= */
+function loadAdminPass() {
+
+  const script = document.createElement("script");
+
+  script.src = `${API_URL}?type=get_admin_pass&callback=setAdminPass`;
+
+  script.onerror = () => {
+    alert("❌ Cannot connect to server");
+  };
+
+  document.body.appendChild(script);
+}
+
+function setAdminPass(data) {
+
+  if (data.status === "success") {
+    ADMIN_PASS = data.pass;
+    askPassword();
+  } else {
+    alert("Cannot load admin config");
+  }
+}
+
+/* ================= ASK PASSWORD ================= */
+function askPassword() {
+
+  const input = prompt("Enter Admin Password:");
+
+  if (input === ADMIN_PASS) {
+    document.getElementById("title").innerText = "Dynamic QR (Secure)";
+    document.getElementById("qr").style.display = "block";
+
+    loadSecret();   // 🔥 continue only after correct password
+  } else {
+    alert("❌ Access Denied");
+    document.body.innerHTML = "<h2>Unauthorized Access</h2>";
+  }
+}
 
 /* ================= LOAD SECRET ================= */
 function loadSecret() {
+
   const script = document.createElement("script");
+
   script.src = `${API_URL}?type=get_secret_key&callback=setSecret`;
+
   document.body.appendChild(script);
 }
 
 function setSecret(data) {
+
   if (data.status === "success") {
     SECRET = data.secret;
     startQR();
   } else {
-    alert("Cannot load secret");
+    alert("Secret load failed");
   }
 }
 
-/* ================= HASH FUNCTION ================= */
+/* ================= HASH ================= */
 async function sha256(str) {
   const buffer = await crypto.subtle.digest(
     "SHA-256",
@@ -43,7 +89,7 @@ async function sha256(str) {
     .join("");
 }
 
-/* ================= QR GENERATION ================= */
+/* ================= GENERATE QR ================= */
 async function generateQR() {
 
   const session_id = "CE101";
@@ -57,7 +103,7 @@ async function generateQR() {
     session_id,
     timestamp,
     token,
-    signature   // ✅ CRITICAL
+    signature
   };
 
   QRCode.toCanvas(
@@ -77,7 +123,7 @@ function startQR() {
 }
 
 /* ================= INIT ================= */
-loadSecret();
+loadAdminPass();
 
 </script>
 

@@ -68,6 +68,8 @@ Html5Qrcode.getCameras().then(devices => {
 ========================= */
 function onScanSuccess(decodedText) {
 
+  console.log("SCANNED:", decodedText);
+
   if (scanned) return;
   scanned = true;
 
@@ -75,7 +77,8 @@ function onScanSuccess(decodedText) {
 
   try {
     qrData = JSON.parse(decodedText);
-  } catch {
+  } catch (err) {
+    console.log("PARSE ERROR:", err);
     document.getElementById("status").innerText = "❌ Invalid QR";
     scanned = false;
     return;
@@ -83,23 +86,50 @@ function onScanSuccess(decodedText) {
 
   document.getElementById("status").innerText = "Submitting...";
 
-  // ✅ JSONP request (NO CORS issue)
-  const url = `${API_URL}?type=attendance`
-    + `&student_id=${encodeURIComponent(student.id)}`
-    + `&session_id=${encodeURIComponent(qrData.session_id)}`
-    + `&token=${encodeURIComponent(qrData.token)}`
-    + `&timestamp=${encodeURIComponent(qrData.timestamp)}`
-    + `&callback=handleAttendance`;
+  const student = JSON.parse(localStorage.getItem("student"));
 
-  const script = document.createElement("script");
-  script.src = url;
+  fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      student_id: student.id,
+      session_id: qrData.session_id,
+      token: qrData.token,
+      timestamp: qrData.timestamp,
+      signature: qrData.signature
+    })
+  })
+  .then(res => res.json())
+  .then(res => {
+    console.log("SERVER RESPONSE:", res);
 
-  script.onerror = () => {
+    if (res.status === "success") {
+      document.getElementById("status").innerText = "✅ Attendance Marked";
+    } else if (res.status === "invalid_qr") {
+      document.getElementById("status").innerText = "🚫 Invalid QR";
+      scanned = false;
+      return;
+    } else {
+      document.getElementById("status").innerText = "❌ Failed";
+      scanned = false;
+      return;
+    }
+
+    if (html5QrCode) {
+      html5QrCode.stop().then(() => {
+        scannerSection.classList.add("hidden");
+        dashboard.classList.remove("hidden");
+      });
+    }
+
+  })
+  .catch(err => {
+    console.error("FETCH ERROR:", err);
     document.getElementById("status").innerText = "❌ Network Error";
     scanned = false;
-  };
-
-  document.body.appendChild(script);
+  });
 }
 
 /* =========================

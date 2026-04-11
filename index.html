@@ -5,7 +5,11 @@
 <title>Attendance Portal</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- QR Scanner -->
 <script src="https://unpkg.com/html5-qrcode"></script>
+
+<!-- Google Login -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
 body{
@@ -25,13 +29,6 @@ body{
   box-shadow:0 4px 14px rgba(0,0,0,0.12);
   text-align:center;
 }
-input{
-  width:100%;
-  padding:10px;
-  margin:8px 0;
-  border:1px solid #ccc;
-  border-radius:6px;
-}
 button{
   width:100%;
   padding:12px;
@@ -45,7 +42,6 @@ button{
 }
 button:hover{background:#0056b3;}
 .logout{background:#dc3545;}
-.logout:hover{background:#a71d2a;}
 .secondary{background:#6c757d;}
 .hidden{display:none;}
 #reader{width:280px;margin:auto;}
@@ -57,19 +53,17 @@ button:hover{background:#0056b3;}
 
 <div class="container">
 
-  <!-- LOGIN -->
-<div id="loginSection">
-  <h2>Login with Google</h2>
+  <!-- GOOGLE LOGIN -->
+  <div id="loginSection">
+    <h2>Login with Google</h2>
 
-  <div id="g_id_onload"
-       data-client_id="YOUR_GOOGLE_CLIENT_ID"
-       data-callback="handleCredentialResponse">
+    <div id="g_id_onload"
+         data-client_id="YOUR_GOOGLE_CLIENT_ID"
+         data-callback="handleCredentialResponse">
+    </div>
+
+    <div class="g_id_signin"></div>
   </div>
-
-  <div class="g_id_signin" data-type="standard"></div>
-</div>
-
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- DASHBOARD -->
   <div id="dashboard" class="hidden">
@@ -99,73 +93,29 @@ let scanned = false;
 /* ================= HELPERS ================= */
 function byId(id){ return document.getElementById(id); }
 
-function jsonpRequest(url, callbackName, onSuccess, onError){
+/* ================= GOOGLE LOGIN ================= */
+function handleCredentialResponse(response){
 
-  window[callbackName] = function(data){
-    delete window[callbackName];
-    onSuccess(data);
-  };
+  const data = parseJwt(response.credential);
 
-  const script = document.createElement("script");
-  script.src = url + "&callback=" + callbackName;
-
-  script.onerror = function(){
-    delete window[callbackName];
-    if (onError) onError();
-  };
-
-  document.body.appendChild(script);
-}
-
-/* ================= DEVICE ID ================= */
-function getDeviceId() {
-  let id = localStorage.getItem("device_id");
-  if (!id) {
-    id = "DEV-" + Math.random().toString(36).substring(2) + Date.now();
-    localStorage.setItem("device_id", id);
-  }
-  return id;
-}
-
-/* ================= LOGIN ================= */
-function login(){
-
-  const id = byId("studentId").value.trim();
-  const pass = byId("password").value.trim();
-  const btn = byId("loginBtn");
-
-  if (!id || !pass){
-    alert("Enter ID and Password");
+  // Restrict domain (IMPORTANT)
+  if (!data.email.endsWith("@itbhu.ac.in")) {
+    alert("Only Institute Email Allowed");
     return;
   }
 
-  btn.disabled = true;
-  btn.innerText = "Logging in...";
+  const student = {
+    email: data.email,
+    name: data.name
+  };
 
-  const cb = "login_" + Date.now();
+  localStorage.setItem("student", JSON.stringify(student));
 
-  const url =
-    API_URL +
-    "?type=login&id=" + encodeURIComponent(id) +
-    "&pass=" + encodeURIComponent(pass);
+  showDashboard();
+}
 
-  jsonpRequest(url, cb, function(data){
-
-    btn.disabled = false;
-    btn.innerText = "Login";
-
-    if (data.status === "success"){
-      localStorage.setItem("student", JSON.stringify(data.student));
-      showDashboard();
-    } else {
-      alert("Invalid ID or Password");
-    }
-
-  }, function(){
-    btn.disabled = false;
-    btn.innerText = "Login";
-    alert("Network error");
-  });
+function parseJwt(token){
+  return JSON.parse(atob(token.split('.')[1]));
 }
 
 /* ================= DASHBOARD ================= */
@@ -177,12 +127,23 @@ function showDashboard(){
   byId("loginSection").classList.add("hidden");
   byId("dashboard").classList.remove("hidden");
 
-  byId("userInfo").innerText = student.name + " (" + student.id + ")";
+  byId("userInfo").innerText =
+    student.name + " (" + student.email + ")";
 }
 
 function logout(){
   localStorage.removeItem("student");
   location.reload();
+}
+
+/* ================= DEVICE ID ================= */
+function getDeviceId(){
+  let id = localStorage.getItem("device_id");
+  if (!id){
+    id = "DEV-" + Math.random().toString(36).substring(2) + Date.now();
+    localStorage.setItem("device_id", id);
+  }
+  return id;
 }
 
 /* ================= SCANNER ================= */
@@ -241,17 +202,9 @@ function onScanSuccess(decodedText){
 
   const cb = "att_" + Date.now();
 
-  const url =
-    API_URL +
-    "?type=mark_attendance" +
-    "&student_id=" + student.id +
-    "&session_id=" + qrData.session_id +
-    "&token=" + qrData.token +
-    "&timestamp=" + qrData.timestamp +
-    "&signature=" + qrData.signature +
-    "&device_id=" + device_id;
+  window[cb] = function(res){
 
-  jsonpRequest(url, cb, function(res){
+    delete window[cb];
 
     if (res.status === "success"){
       byId("status").innerText = "✅ Attendance Marked";
@@ -276,11 +229,21 @@ function onScanSuccess(decodedText){
     }
 
     setTimeout(() => closeScanner(), 1200);
+  };
 
-  }, function(){
-    byId("status").innerText = "❌ Network error";
-    scanned = false;
-  });
+  const script = document.createElement("script");
+  script.src =
+    API_URL +
+    "?type=mark_attendance" +
+    "&email=" + encodeURIComponent(student.email) +
+    "&session_id=" + qrData.session_id +
+    "&token=" + qrData.token +
+    "&timestamp=" + qrData.timestamp +
+    "&signature=" + qrData.signature +
+    "&device_id=" + device_id +
+    "&callback=" + cb;
+
+  document.body.appendChild(script);
 }
 
 /* ================= AUTO LOGIN ================= */

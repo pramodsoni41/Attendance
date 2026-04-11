@@ -58,12 +58,18 @@ button:hover{background:#0056b3;}
 <div class="container">
 
   <!-- LOGIN -->
-  <div id="loginSection">
-    <h2>Student Login</h2>
-    <input type="text" id="studentId" placeholder="Enter Student ID">
-    <input type="password" id="password" placeholder="Enter Password">
-    <button id="loginBtn" onclick="login()">Login</button>
+<div id="loginSection">
+  <h2>Login with Google</h2>
+
+  <div id="g_id_onload"
+       data-client_id="YOUR_GOOGLE_CLIENT_ID"
+       data-callback="handleCredentialResponse">
   </div>
+
+  <div class="g_id_signin" data-type="standard"></div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- DASHBOARD -->
   <div id="dashboard" class="hidden">

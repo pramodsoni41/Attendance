@@ -103,13 +103,12 @@ button:hover { background: #0056b3; }
 </div>
 
 <script>
-/* =========================
-   LOGIN (JSONP)
-========================= */
+
+/* ================= LOGIN ================= */
 function login() {
-  const id = document.getElementById("studentId").value.trim();
-  const pass = document.getElementById("password").value.trim();
-  const btn = document.getElementById("loginBtn");
+  const id = studentId.value.trim();
+  const pass = password.value.trim();
+  const btn = loginBtn;
 
   if (!id || !pass) {
     alert("Enter ID and Password");
@@ -130,15 +129,12 @@ function login() {
   };
 
   script.onload = () => script.remove();
-
   document.body.appendChild(script);
 }
 
 function handleLogin(data) {
-  const btn = document.getElementById("loginBtn");
-
-  btn.innerText = "Login";
-  btn.disabled = false;
+  loginBtn.innerText = "Login";
+  loginBtn.disabled = false;
 
   if (data.status === "success") {
     localStorage.setItem("student", JSON.stringify(data.student));
@@ -148,48 +144,38 @@ function handleLogin(data) {
   }
 }
 
-/* =========================
-   DASHBOARD
-========================= */
+/* ================= DASHBOARD ================= */
 function showDashboard() {
   const student = JSON.parse(localStorage.getItem("student"));
   if (!student) return;
 
-  document.getElementById("loginSection").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
+  loginSection.classList.add("hidden");
+  dashboard.classList.remove("hidden");
 
-  document.getElementById("userInfo").innerText =
-    `${student.name} (${student.id})`;
+  userInfo.innerText = `${student.name} (${student.id})`;
 }
 
-/* =========================
-   SCANNER
-========================= */
+/* ================= SCANNER ================= */
 let html5QrCode;
 let scanned = false;
 
 function openScanner() {
-  document.getElementById("dashboard").classList.add("hidden");
-  document.getElementById("scannerSection").classList.remove("hidden");
-
+  dashboard.classList.add("hidden");
+  scannerSection.classList.remove("hidden");
   startScanner();
 }
 
 function closeScanner() {
-
   if (html5QrCode) {
     html5QrCode.stop()
       .then(() => {
-        document.getElementById("scannerSection").classList.add("hidden");
-        document.getElementById("dashboard").classList.remove("hidden");
+        scannerSection.classList.add("hidden");
+        dashboard.classList.remove("hidden");
       })
       .catch(() => {
-        document.getElementById("scannerSection").classList.add("hidden");
-        document.getElementById("dashboard").classList.remove("hidden");
+        scannerSection.classList.add("hidden");
+        dashboard.classList.remove("hidden");
       });
-  } else {
-    document.getElementById("scannerSection").classList.add("hidden");
-    document.getElementById("dashboard").classList.remove("hidden");
   }
 }
 
@@ -210,13 +196,13 @@ function startScanner() {
         { fps: 10, qrbox: 250 },
         onScanSuccess
       );
-    } else {
-      alert("No camera found");
     }
   });
 }
 
+/* ================= ATTENDANCE ================= */
 function onScanSuccess(decodedText) {
+
   if (scanned) return;
   scanned = true;
 
@@ -225,72 +211,79 @@ function onScanSuccess(decodedText) {
   try {
     qrData = JSON.parse(decodedText);
   } catch {
-    document.getElementById("status").innerText = "❌ Invalid QR";
+    status.innerText = "❌ Invalid QR";
     scanned = false;
     return;
   }
 
-  document.getElementById("status").innerText = "Submitting...";
+  status.innerText = "Submitting...";
 
   const student = JSON.parse(localStorage.getItem("student"));
 
   fetch(API_URL, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
       student_id: student.id,
       session_id: qrData.session_id,
       token: qrData.token,
-      timestamp: qrData.timestamp
+      timestamp: qrData.timestamp,
+      signature: qrData.signature   // ✅ IMPORTANT
     })
   })
   .then(res => res.json())
   .then(res => {
 
     if (res.status === "success") {
-      document.getElementById("status").innerText = "✅ Attendance Marked";
+      status.innerText = "✅ Attendance Marked";
     } else if (res.status === "expired") {
-      document.getElementById("status").innerText = "⏱ QR Expired";
+      status.innerText = "⏱ QR Expired";
       scanned = false;
+      return;
     } else if (res.status === "already_marked") {
-      document.getElementById("status").innerText = "⚠ Already Marked";
-    } else {
-      document.getElementById("status").innerText = "❌ Failed";
+      status.innerText = "⚠ Already Marked";
+    } else if (res.status === "invalid_qr") {
+      status.innerText = "🚫 Unauthorized QR";
       scanned = false;
+      return;
+    } else {
+      status.innerText = "❌ Failed";
+      scanned = false;
+      return;
     }
 
+    // ✅ STOP CAMERA PROPERLY
     if (html5QrCode) {
-  html5QrCode.stop()
-    .then(() => {
-      document.getElementById("scannerSection").classList.add("hidden");
-      document.getElementById("dashboard").classList.remove("hidden");
-    })
-    .catch(() => {
-      // fallback
-      document.getElementById("scannerSection").classList.add("hidden");
-      document.getElementById("dashboard").classList.remove("hidden");
-    });
-}
+      html5QrCode.stop()
+        .then(() => {
+          scannerSection.classList.add("hidden");
+          dashboard.classList.remove("hidden");
+        })
+        .catch(() => {
+          scannerSection.classList.add("hidden");
+          dashboard.classList.remove("hidden");
+        });
+    }
 
   })
   .catch(err => {
     console.error(err);
-    document.getElementById("status").innerText = "Network Error";
+    status.innerText = "❌ Network Error";
     scanned = false;
   });
 }
 
-/* =========================
-   LOGOUT
-========================= */
+/* ================= LOGOUT ================= */
 function logout() {
   localStorage.removeItem("student");
   location.reload();
 }
 
-/* =========================
-   AUTO LOGIN
-========================= */
+/* ================= AUTO LOGIN ================= */
 window.onload = showDashboard;
+
 </script>
 
 </body>

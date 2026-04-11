@@ -1,12 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>QR Generator</title>
+
+  <!-- QR Library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 40px; }
+    canvas { margin-top: 20px; }
+  </style>
+</head>
+
+<body>
+
+<h2 id="title">Admin Login Required</h2>
+<canvas id="qr" style="display:none;"></canvas>
+
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbx5N5qsZB8-bJkxohprYKgH2RSzuvlJ-7CfNYq_KqVDO3PvR07n27SX7Rn0sysrlLA/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwp5pk4yhw1-0TgmU7kvshqbT_itZsN9MFL8nSF_HmrxJtfxnfGyMU_zK7PTLaP55U/exec";
 
 let ADMIN_PASS = "";
 let qrInterval = null;
 
-/* ================= SAFE JSONP ================= */
+/* ================= JSONP ================= */
 function jsonpRequest(url, callbackName, onSuccess, onError) {
+
+  const script = document.createElement("script");
 
   window[callbackName] = function(data) {
     delete window[callbackName];
@@ -14,7 +36,6 @@ function jsonpRequest(url, callbackName, onSuccess, onError) {
     onSuccess(data);
   };
 
-  const script = document.createElement("script");
   script.src = url + "&callback=" + callbackName;
 
   script.onerror = function() {
@@ -26,11 +47,10 @@ function jsonpRequest(url, callbackName, onSuccess, onError) {
   document.body.appendChild(script);
 }
 
-/* ================= LOAD ADMIN PASSWORD ================= */
+/* ================= LOAD ADMIN ================= */
 function loadAdminPass() {
 
   const cb = "admin_" + Date.now();
-
   const url = `${API_URL}?type=get_admin_pass`;
 
   jsonpRequest(url, cb, function(data) {
@@ -43,33 +63,25 @@ function loadAdminPass() {
     }
 
   }, function() {
-    alert("❌ Server connection failed");
+    alert("❌ Server error");
   });
 }
 
-/* ================= ASK PASSWORD ================= */
+/* ================= LOGIN ================= */
 function askPassword() {
 
   const input = prompt("Enter Admin Password:");
 
   if (input === ADMIN_PASS) {
 
-    const titleEl = document.getElementById("title");
-    const qrEl = document.getElementById("qr");
-
-    if (!titleEl || !qrEl) {
-      alert("❌ UI elements missing");
-      return;
-    }
-
-    titleEl.innerText = "Dynamic QR (Secure)";
-    qrEl.style.display = "block";
+    document.getElementById("title").innerText = "Dynamic QR (Active)";
+    document.getElementById("qr").style.display = "block";
 
     startQR();
 
   } else {
     alert("❌ Access Denied");
-    document.body.innerHTML = "<h2>Unauthorized Access</h2>";
+    document.body.innerHTML = "<h2>Unauthorized</h2>";
   }
 }
 
@@ -77,44 +89,42 @@ function askPassword() {
 function fetchQR() {
 
   const cb = "qr_" + Date.now();
-
   const url = `${API_URL}?type=generate_qr&session_id=CE101`;
 
   jsonpRequest(url, cb, function(data) {
 
     if (data.status !== "success") {
-      console.warn("QR generation failed");
+      console.warn("QR failed");
       return;
     }
 
     const qrCanvas = document.getElementById("qr");
 
-    if (!qrCanvas) return;
-
     QRCode.toCanvas(
       qrCanvas,
       JSON.stringify(data.qr),
-      { width: 600, margin: 2 }
+      { width: 300, margin: 2 }
     );
 
   }, function() {
-    console.warn("QR fetch failed");
+    console.warn("QR fetch error");
   });
 }
 
 /* ================= LOOP ================= */
 function startQR() {
 
-  fetchQR();
-
   if (qrInterval) clearInterval(qrInterval);
+
+  fetchQR();
 
   qrInterval = setInterval(fetchQR, 15000);
 }
 
 /* ================= INIT ================= */
-document.addEventListener("DOMContentLoaded", function () {
-  loadAdminPass();
-});
+document.addEventListener("DOMContentLoaded", loadAdminPass);
 
 </script>
+
+</body>
+</html>

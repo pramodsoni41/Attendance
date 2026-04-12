@@ -2,151 +2,169 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>QR Generator</title>
+  <title>QR Scanner</title>
 
-  <!-- QR Library -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <!-- QR Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
 
-<style>
-  body {
-    font-family: Arial;
-    margin: 0;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #f4f6f8;
-  }
+  <style>
+    body {
+      font-family: Arial;
+      background: #f4f6f8;
+      text-align: center;
+      padding: 20px;
+    }
 
-  .container {
-    text-align: center;
-    background: white;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-  }
+    #reader {
+      width: 300px;
+      margin: auto;
+    }
 
-  canvas {
-    margin-top: 20px;
-  }
-</style>
+    #status {
+      margin-top: 20px;
+      font-weight: bold;
+    }
 
-  
+    input {
+      padding: 10px;
+      margin: 10px;
+      width: 250px;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+  </style>
 </head>
 
 <body>
 
-<div class="container">
-  <h2 id="title">Admin Login Required</h2>
-  <canvas id="qr" style="display:none;"></canvas>
-</div>
+<h2>QR Attendance Scanner</h2>
 
+<input id="studentId" placeholder="Enter Student ID">
+<br>
+<button onclick="startScanner()">Start Scanner</button>
+
+<div id="reader"></div>
+
+<div id="status"></div>
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbwp5pk4yhw1-0TgmU7kvshqbT_itZsN9MFL8nSF_HmrxJtfxnfGyMU_zK7PTLaP55U/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwD9qntti13ADqIoY7dGgIravlE0AnUUjc44ipWj-MRpV3p6Ld6-cPYDzWkrbhnaqw/exec";
 
-let ADMIN_PASS = "";
-let qrInterval = null;
+let deviceId = localStorage.getItem("device_id");
+
+if (!deviceId) {
+  deviceId = "dev_" + Math.random().toString(36).substring(2, 10);
+  localStorage.setItem("device_id", deviceId);
+}
 
 /* ================= JSONP ================= */
-function jsonpRequest(url, callbackName, onSuccess, onError) {
+function jsonp(url, callbackName, success) {
 
   const script = document.createElement("script");
 
   window[callbackName] = function(data) {
     delete window[callbackName];
     script.remove();
-    onSuccess(data);
+    success(data);
   };
 
   script.src = url + "&callback=" + callbackName;
-
-  script.onerror = function() {
-    delete window[callbackName];
-    script.remove();
-    if (onError) onError();
-  };
-
   document.body.appendChild(script);
 }
 
-/* ================= LOAD ADMIN ================= */
-function loadAdminPass() {
+/* ================= START SCANNER ================= */
+function startScanner() {
 
-  const cb = "admin_" + Date.now();
-  const url = `${API_URL}?type=get_admin_pass`;
+  const studentId = document.getElementById("studentId").value.trim();
 
-  jsonpRequest(url, cb, function(data) {
-
-    if (data.status === "success") {
-      ADMIN_PASS = data.pass;
-      askPassword();
-    } else {
-      alert("❌ Cannot load admin config");
-    }
-
-  }, function() {
-    alert("❌ Server error");
-  });
-}
-
-/* ================= LOGIN ================= */
-function askPassword() {
-
-  const input = prompt("Enter Admin Password:");
-
-  if (input === ADMIN_PASS) {
-
-    document.getElementById("title").innerText = "Dynamic QR (Active)";
-    document.getElementById("qr").style.display = "block";
-
-    startQR();
-
-  } else {
-    alert("❌ Access Denied");
-    document.body.innerHTML = "<h2>Unauthorized</h2>";
+  if (!studentId) {
+    alert("Enter Student ID first");
+    return;
   }
+
+  const qrScanner = new Html5Qrcode("reader");
+
+  qrScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    (decodedText) => {
+
+      qrScanner.stop();
+
+      try {
+        const qr = JSON.parse(decodedText);
+
+        sendAttendance(studentId, qr);
+
+      } catch (e) {
+        document.getElementById("status").innerText = "❌ Invalid QR";
+      }
+    }
+  );
 }
 
-/* ================= FETCH QR ================= */
-function fetchQR() {
+/* ================= SEND TO SERVER ================= */
+function sendAttendance(studentId, qr) {
 
-  const cb = "qr_" + Date.now();
-  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
+  const cb = "scan_" + Date.now();
 
-  jsonpRequest(url, cb, function(data) {
+  const url =
+    `${API_URL}?type=mark_attendance` +
+    `&student_id=${studentId}` +
+    `&session_id=${qr.session_id}` +
+    `&token=${qr.token}` +
+    `&timestamp=${qr.timestamp}` +
+    `&signature=${qr.signature}` +
+    `&device_id=${deviceId}`;
 
-    if (data.status !== "success") {
-      console.warn("QR failed");
-      return;
+  jsonp(url, cb, function(res) {
+
+    let msg = "";
+
+    switch (res.status) {
+      case "success":
+        msg = "✅ Attendance Marked";
+        break;
+
+      case "expired":
+        msg = "⏱ QR Expired";
+        break;
+
+      case "expired_or_used":
+        msg = "⚠️ QR Already Used";
+        break;
+
+      case "already_marked":
+        msg = "ℹ️ Already Marked";
+        break;
+
+      case "device_used":
+        msg = "📱 Device Already Used";
+        break;
+
+      case "invalid_qr":
+        msg = "❌ Invalid QR";
+        break;
+
+      case "student_not_found":
+        msg = "❌ Invalid Student ID";
+        break;
+
+      default:
+        msg = "⚠️ Error: " + res.status;
     }
 
-    const qrCanvas = document.getElementById("qr");
-
-    QRCode.toCanvas(
-      qrCanvas,
-      JSON.stringify(data.qr),
-      { width: 500, margin: 2 }
-    );
-
-  }, function() {
-    console.warn("QR fetch error");
+    document.getElementById("status").innerText = msg;
   });
 }
-
-/* ================= LOOP ================= */
-function startQR() {
-
-  if (qrInterval) clearInterval(qrInterval);
-
-  fetchQR();
-
-  qrInterval = setInterval(fetchQR, 15000);
-}
-
-/* ================= INIT ================= */
-document.addEventListener("DOMContentLoaded", loadAdminPass);
 
 </script>
 

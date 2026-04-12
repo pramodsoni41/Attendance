@@ -33,6 +33,7 @@
     #title {
       color: #2563eb;
       margin-bottom: 10px;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -46,11 +47,16 @@
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbwB0Xmci8Xd8DgLU8lkKduZwXak1WKuJrheg-hgT_rlMK31vmV83JFnuEEZkst-KNs/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxMDya7EJwS8TaSSzyWERT5c52ss09UMKqW6eafy2FZiTLhdoWUEn9XWFos7WYAv5Y/exec";
+
+const QR_VALIDITY_MS = 15000;   // MUST match backend
+const REFRESH_BEFORE_MS = 14000;
 
 let ADMIN_PASS = "";
 let qrInterval = null;
+let countdownInterval = null;
 let lastQR = null;
+let timeOffset = 0;
 
 /* ================= JSONP ================= */
 function jsonpRequest(url, callbackName, onSuccess, onError) {
@@ -102,7 +108,6 @@ function askPassword() {
   if (input === ADMIN_PASS) {
 
     document.getElementById("qr").style.display = "block";
-
     startQR();
 
   } else {
@@ -126,6 +131,11 @@ function fetchQR() {
 
     lastQR = data.qr;
 
+    /* ===== TIME SYNC (IMPORTANT) ===== */
+    const serverNow = lastQR.timestamp;
+    const clientNow = Date.now();
+    timeOffset = serverNow - clientNow;
+
     const qrCanvas = document.getElementById("qr");
 
     QRCode.toCanvas(
@@ -146,9 +156,11 @@ function updateCountdown() {
 
   if (!lastQR) return;
 
+  const now = Date.now() + timeOffset;
+
   const remaining = Math.max(
     0,
-    Math.floor((lastQR.timestamp + 25000 - Date.now()) / 1000)
+    Math.floor((lastQR.timestamp + QR_VALIDITY_MS - now) / 1000)
   );
 
   document.getElementById("title").innerText =
@@ -159,14 +171,15 @@ function updateCountdown() {
 function startQR() {
 
   if (qrInterval) clearInterval(qrInterval);
+  if (countdownInterval) clearInterval(countdownInterval);
 
   fetchQR();
 
-  // refresh QR every 10 sec
-  qrInterval = setInterval(fetchQR, 10000);
+  // refresh QR slightly before expiry
+  qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
 
   // update countdown every second
-  setInterval(updateCountdown, 1000);
+  countdownInterval = setInterval(updateCountdown, 1000);
 }
 
 /* ================= INIT ================= */

@@ -2,9 +2,8 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>QR Scanner</title>
+  <title>QR Attendance Scanner</title>
 
-  <!-- QR Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode"></script>
 
   <style>
@@ -23,6 +22,7 @@
     #status {
       margin-top: 20px;
       font-weight: bold;
+      font-size: 18px;
     }
 
     input {
@@ -39,35 +39,41 @@
       border-radius: 8px;
       cursor: pointer;
     }
+
+    #title {
+      margin-top: 10px;
+      color: #2563eb;
+    }
   </style>
 </head>
 
 <body>
 
 <h2>QR Attendance Scanner</h2>
+<h3 id="title">Ready to Scan</h3>
 
 <input id="studentId" placeholder="Enter Student ID">
 <br>
 <button onclick="startScanner()">Start Scanner</button>
 
 <div id="reader"></div>
-
 <div id="status"></div>
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbwD9qntti13ADqIoY7dGgIravlE0AnUUjc44ipWj-MRpV3p6Ld6-cPYDzWkrbhnaqw/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwd7B3uHm03k-uG_Z_4aS7CQ9W561MyLNTy5dZGNCIFy4uBVBwlVSI5CeLDuCAyLGk/exec";
 
 let deviceId = localStorage.getItem("device_id");
-
 if (!deviceId) {
   deviceId = "dev_" + Math.random().toString(36).substring(2, 10);
   localStorage.setItem("device_id", deviceId);
 }
 
+let scanner;
+let scanLock = false;
+
 /* ================= JSONP ================= */
 function jsonp(url, callbackName, success) {
-
   const script = document.createElement("script");
 
   window[callbackName] = function(data) {
@@ -90,40 +96,48 @@ function startScanner() {
     return;
   }
 
-  const qrScanner = new Html5Qrcode("reader");
+  if (scanner) return;
 
-  qrScanner.start(
+  scanner = new Html5Qrcode("reader");
+
+  scanner.start(
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
-    (decodedText) => {
+    function(decodedText) {
 
-      qrScanner.stop();
+      if (scanLock) return;
+      scanLock = true;
 
       try {
         const qr = JSON.parse(decodedText);
-
         sendAttendance(studentId, qr);
-
       } catch (e) {
         document.getElementById("status").innerText = "❌ Invalid QR";
       }
+
+      setTimeout(() => {
+        scanLock = false;
+      }, 2000);
+    },
+    function(error) {
+      // silent
     }
   );
 }
 
-/* ================= SEND TO SERVER ================= */
+/* ================= SEND ATTENDANCE ================= */
 function sendAttendance(studentId, qr) {
 
   const cb = "scan_" + Date.now();
 
   const url =
     `${API_URL}?type=mark_attendance` +
-    `&student_id=${studentId}` +
-    `&session_id=${qr.session_id}` +
-    `&token=${qr.token}` +
-    `&timestamp=${qr.timestamp}` +
-    `&signature=${qr.signature}` +
-    `&device_id=${deviceId}`;
+    `&student_id=${encodeURIComponent(studentId)}` +
+    `&session_id=${encodeURIComponent(qr.session_id)}` +
+    `&token=${encodeURIComponent(qr.token)}` +
+    `&timestamp=${encodeURIComponent(qr.timestamp)}` +
+    `&signature=${encodeURIComponent(qr.signature)}` +
+    `&device_id=${encodeURIComponent(deviceId)}`;
 
   jsonp(url, cb, function(res) {
 
@@ -133,36 +147,41 @@ function sendAttendance(studentId, qr) {
       case "success":
         msg = "✅ Attendance Marked";
         break;
-
       case "expired":
         msg = "⏱ QR Expired";
         break;
-
       case "expired_or_used":
         msg = "⚠️ QR Already Used";
         break;
-
       case "already_marked":
         msg = "ℹ️ Already Marked";
         break;
-
       case "device_used":
         msg = "📱 Device Already Used";
         break;
-
       case "invalid_qr":
         msg = "❌ Invalid QR";
         break;
-
       case "student_not_found":
         msg = "❌ Invalid Student ID";
         break;
-
+      case "busy":
+        msg = "⏳ Server Busy, Retry";
+        break;
       default:
-        msg = "⚠️ Error: " + res.status;
+        msg = "⚠️ " + res.status;
     }
 
     document.getElementById("status").innerText = msg;
+
+    // Countdown (based on QR timestamp)
+    const remaining = Math.max(
+      0,
+      Math.floor((qr.timestamp + 25000 - Date.now()) / 1000)
+    );
+
+    document.getElementById("title").innerText =
+      "QR Time Left: " + remaining + "s";
   });
 }
 

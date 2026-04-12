@@ -2,188 +2,175 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>QR Attendance Scanner</title>
+  <title>QR Generator (Admin)</title>
 
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- QR Library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
   <style>
     body {
       font-family: Arial;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       background: #f4f6f8;
+    }
+
+    .container {
       text-align: center;
-      padding: 20px;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
     }
 
-    #reader {
-      width: 300px;
-      margin: auto;
-    }
-
-    #status {
+    canvas {
       margin-top: 20px;
-      font-weight: bold;
-      font-size: 18px;
-    }
-
-    input {
-      padding: 10px;
-      margin: 10px;
-      width: 250px;
-    }
-
-    button {
-      padding: 10px 20px;
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
     }
 
     #title {
-      margin-top: 10px;
       color: #2563eb;
+      margin-bottom: 10px;
     }
   </style>
 </head>
 
 <body>
 
-<h2>QR Attendance Scanner</h2>
-<h3 id="title">Ready to Scan</h3>
-
-<input id="studentId" placeholder="Enter Student ID">
-<br>
-<button onclick="startScanner()">Start Scanner</button>
-
-<div id="reader"></div>
-<div id="status"></div>
+<div class="container">
+  <h2 id="title">Admin Login Required</h2>
+  <canvas id="qr" style="display:none;"></canvas>
+</div>
 
 <script>
 
 const API_URL = "https://script.google.com/macros/s/AKfycbwB0Xmci8Xd8DgLU8lkKduZwXak1WKuJrheg-hgT_rlMK31vmV83JFnuEEZkst-KNs/exec";
 
-let deviceId = localStorage.getItem("device_id");
-if (!deviceId) {
-  deviceId = "dev_" + Math.random().toString(36).substring(2, 10);
-  localStorage.setItem("device_id", deviceId);
-}
-
-let scanner;
-let scanLock = false;
+let ADMIN_PASS = "";
+let qrInterval = null;
+let lastQR = null;
 
 /* ================= JSONP ================= */
-function jsonp(url, callbackName, success) {
+function jsonpRequest(url, callbackName, onSuccess, onError) {
+
   const script = document.createElement("script");
 
   window[callbackName] = function(data) {
     delete window[callbackName];
     script.remove();
-    success(data);
+    onSuccess(data);
   };
 
   script.src = url + "&callback=" + callbackName;
+
+  script.onerror = function() {
+    delete window[callbackName];
+    script.remove();
+    if (onError) onError();
+  };
+
   document.body.appendChild(script);
 }
 
-/* ================= START SCANNER ================= */
-function startScanner() {
+/* ================= LOAD ADMIN ================= */
+function loadAdminPass() {
 
-  const studentId = document.getElementById("studentId").value.trim();
+  const cb = "admin_" + Date.now();
+  const url = `${API_URL}?type=get_admin_pass`;
 
-  if (!studentId) {
-    alert("Enter Student ID first");
-    return;
-  }
+  jsonpRequest(url, cb, function(data) {
 
-  if (scanner) return;
-
-  scanner = new Html5Qrcode("reader");
-
-  scanner.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    function(decodedText) {
-
-      if (scanLock) return;
-      scanLock = true;
-
-      try {
-        const qr = JSON.parse(decodedText);
-        sendAttendance(studentId, qr);
-      } catch (e) {
-        document.getElementById("status").innerText = "❌ Invalid QR";
-      }
-
-      setTimeout(() => {
-        scanLock = false;
-      }, 2000);
-    },
-    function(error) {
-      // silent
-    }
-  );
-}
-
-/* ================= SEND ATTENDANCE ================= */
-function sendAttendance(studentId, qr) {
-
-  const cb = "scan_" + Date.now();
-
-  const url =
-    `${API_URL}?type=mark_attendance` +
-    `&student_id=${encodeURIComponent(studentId)}` +
-    `&session_id=${encodeURIComponent(qr.session_id)}` +
-    `&token=${encodeURIComponent(qr.token)}` +
-    `&timestamp=${encodeURIComponent(qr.timestamp)}` +
-    `&signature=${encodeURIComponent(qr.signature)}` +
-    `&device_id=${encodeURIComponent(deviceId)}`;
-
-  jsonp(url, cb, function(res) {
-
-    let msg = "";
-
-    switch (res.status) {
-      case "success":
-        msg = "✅ Attendance Marked";
-        break;
-      case "expired":
-        msg = "⏱ QR Expired";
-        break;
-      case "expired_or_used":
-        msg = "⚠️ QR Already Used";
-        break;
-      case "already_marked":
-        msg = "ℹ️ Already Marked";
-        break;
-      case "device_used":
-        msg = "📱 Device Already Used";
-        break;
-      case "invalid_qr":
-        msg = "❌ Invalid QR";
-        break;
-      case "student_not_found":
-        msg = "❌ Invalid Student ID";
-        break;
-      case "busy":
-        msg = "⏳ Server Busy, Retry";
-        break;
-      default:
-        msg = "⚠️ " + res.status;
+    if (data.status === "success") {
+      ADMIN_PASS = data.pass;
+      askPassword();
+    } else {
+      alert("❌ Cannot load admin config");
     }
 
-    document.getElementById("status").innerText = msg;
-
-    // Countdown (based on QR timestamp)
-    const remaining = Math.max(
-      0,
-      Math.floor((qr.timestamp + 25000 - Date.now()) / 1000)
-    );
-
-    document.getElementById("title").innerText =
-      "QR Time Left: " + remaining + "s";
+  }, function() {
+    alert("❌ Server error");
   });
 }
+
+/* ================= LOGIN ================= */
+function askPassword() {
+
+  const input = prompt("Enter Admin Password:");
+
+  if (input === ADMIN_PASS) {
+
+    document.getElementById("qr").style.display = "block";
+
+    startQR();
+
+  } else {
+    alert("❌ Access Denied");
+    document.body.innerHTML = "<h2>Unauthorized</h2>";
+  }
+}
+
+/* ================= FETCH QR ================= */
+function fetchQR() {
+
+  const cb = "qr_" + Date.now();
+  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
+
+  jsonpRequest(url, cb, function(data) {
+
+    if (data.status !== "success") {
+      console.warn("QR fetch failed");
+      return;
+    }
+
+    lastQR = data.qr;
+
+    const qrCanvas = document.getElementById("qr");
+
+    QRCode.toCanvas(
+      qrCanvas,
+      JSON.stringify(lastQR),
+      { width: 400, margin: 2 }
+    );
+
+    updateCountdown();
+
+  }, function() {
+    console.warn("QR fetch error");
+  });
+}
+
+/* ================= COUNTDOWN ================= */
+function updateCountdown() {
+
+  if (!lastQR) return;
+
+  const remaining = Math.max(
+    0,
+    Math.floor((lastQR.timestamp + 25000 - Date.now()) / 1000)
+  );
+
+  document.getElementById("title").innerText =
+    "QR Active | Time Left: " + remaining + "s";
+}
+
+/* ================= LOOP ================= */
+function startQR() {
+
+  if (qrInterval) clearInterval(qrInterval);
+
+  fetchQR();
+
+  // refresh QR every 5 sec
+  qrInterval = setInterval(fetchQR, 5000);
+
+  // update countdown every second
+  setInterval(updateCountdown, 1000);
+}
+
+/* ================= INIT ================= */
+document.addEventListener("DOMContentLoaded", loadAdminPass);
 
 </script>
 

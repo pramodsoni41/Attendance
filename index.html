@@ -21,7 +21,7 @@ body{
   background:#fff;
   padding:25px;
   border-radius:12px;
-  width:360px;
+  width:350px;
   box-shadow:0 4px 14px rgba(0,0,0,0.12);
   text-align:center;
 }
@@ -43,23 +43,35 @@ button{
   font-size:16px;
   cursor:pointer;
 }
+  #welcomeBox h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #007bff;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #555;
+  margin: 5px 0 10px;
+}
+
+.desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.desc.small {
+  font-size: 12px;
+  color: #888;
+}
 button:hover{background:#0056b3;}
 .logout{background:#dc3545;}
 .logout:hover{background:#a71d2a;}
 .secondary{background:#6c757d;}
 .hidden{display:none;}
-
 #reader{width:280px;margin:auto;}
 #status{margin-top:10px;font-weight:bold;}
-
-#zoomSlider{
-  width:100%;
-  margin-top:12px;
-}
-.zoom-label{
-  font-size:12px;
-  color:#666;
-}
 </style>
 </head>
 
@@ -67,34 +79,47 @@ button:hover{background:#0056b3;}
 
 <div class="container">
 
-<!-- LOGIN -->
-<div id="loginSection">
-  <h2>Student Login</h2>
-  <input type="text" id="studentId" placeholder="Enter Student ID">
-  <input type="password" id="password" placeholder="Enter Password">
-  <button id="loginBtn" onclick="login()">Login</button>
+  <!-- LOGIN -->
+  <div id="loginSection">
+    <div id="welcomeBox">
+  <h1>📘 Attendance Portal</h1>
+  <p class="subtitle">
+    Welcome to the Digital Attendance System
+  </p>
+
+  <p class="desc">
+    This platform enables seamless and secure attendance marking using QR-based verification.
+    Students can log in using their credentials and mark attendance instantly by scanning the session QR code.
+  </p>
+
+  <p class="desc small">
+    Designed for reliability, transparency, and ease of use in classroom environments.
+  </p>
+
+  <hr style="margin:15px 0;">
 </div>
 
-<!-- DASHBOARD -->
-<div id="dashboard" class="hidden">
-  <h2>Welcome</h2>
-  <p id="userInfo"></p>
-  <button onclick="openScanner()">📷 Mark Attendance</button>
-  <button class="logout" onclick="logout()">Logout</button>
-</div>
+<h2>Student Login</h2>
+    <input type="text" id="studentId" placeholder="Enter Student ID">
+    <input type="password" id="password" placeholder="Enter Password">
+    <button id="loginBtn" onclick="login()">Login</button>
+  </div>
 
-<!-- SCANNER -->
-<div id="scannerSection" class="hidden">
-  <h3>Scan QR</h3>
-  <div id="reader"></div>
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden">
+    <h2>Welcome</h2>
+    <p id="userInfo"></p>
+    <button onclick="openScanner()">📷 Mark Attendance</button>
+    <button class="logout" onclick="logout()">Logout</button>
+  </div>
 
-  <!-- ZOOM CONTROL -->
-  <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
-  <div class="zoom-label">Zoom</div>
-
-  <div id="status"></div>
-  <button class="secondary" onclick="closeScanner()">⬅ Back</button>
-</div>
+  <!-- SCANNER -->
+  <div id="scannerSection" class="hidden">
+    <h3>Scan QR</h3>
+    <div id="reader"></div>
+    <div id="status"></div>
+    <button class="secondary" onclick="closeScanner()">⬅ Back</button>
+  </div>
 
 </div>
 
@@ -108,7 +133,6 @@ let scanned = false;
 /* ================= HELPERS ================= */
 function byId(id){ return document.getElementById(id); }
 
-/* ================= JSONP ================= */
 function jsonpRequest(url, callbackName, onSuccess, onError){
 
   window[callbackName] = function(data){
@@ -130,7 +154,7 @@ function jsonpRequest(url, callbackName, onSuccess, onError){
 /* ================= DEVICE ID ================= */
 function getDeviceId() {
 
-  const EXPIRY_MINUTES = 30;
+  const EXPIRY_MINUTES = 25; // change to 30–40 as needed
   const now = Date.now();
 
   let stored = localStorage.getItem("device_data");
@@ -138,11 +162,16 @@ function getDeviceId() {
   if (stored) {
     try {
       stored = JSON.parse(stored);
+
       const age = (now - stored.timestamp) / (1000 * 60);
-      if (age < EXPIRY_MINUTES) return stored.id;
-    } catch(e){}
+
+      if (age < EXPIRY_MINUTES) {
+        return stored.id; // valid
+      }
+    } catch(e) {}
   }
 
+  // generate new device id
   const newId = "DEV-" + Math.random().toString(36).substring(2) + now;
 
   localStorage.setItem("device_data", JSON.stringify({
@@ -170,7 +199,10 @@ function login(){
 
   const cb = "login_" + Date.now();
 
-  const url = API_URL + "?type=login&id=" + id + "&pass=" + pass;
+  const url =
+    API_URL +
+    "?type=login&id=" + encodeURIComponent(id) +
+    "&pass=" + encodeURIComponent(pass);
 
   jsonpRequest(url, cb, function(data){
 
@@ -232,43 +264,13 @@ function startScanner(){
 
   Html5Qrcode.getCameras().then(devices => {
     if (devices.length){
-
       html5QrCode.start(
         { facingMode: "environment" },
-        {
-          fps: 12,
-          qrbox: 220
-        },
+        { fps: 10, qrbox: 180 },
         onScanSuccess
-      ).then(() => enableZoom());
+      );
     }
   });
-}
-
-/* ================= ZOOM ================= */
-function enableZoom(){
-
-  const slider = byId("zoomSlider");
-  const track = html5QrCode.getRunningTrack();
-
-  if (!track) return;
-
-  const cap = track.getCapabilities();
-
-  if (!cap.zoom){
-    slider.style.display = "none";
-    return;
-  }
-
-  slider.min = cap.zoom.min;
-  slider.max = cap.zoom.max;
-  slider.step = cap.zoom.step || 0.1;
-
-  slider.oninput = function(){
-    track.applyConstraints({
-      advanced: [{ zoom: parseFloat(this.value) }]
-    });
-  };
 }
 
 /* ================= ATTENDANCE ================= */

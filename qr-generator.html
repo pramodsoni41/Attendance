@@ -2,36 +2,40 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>QR Generator</title>
+  <title>QR Generator (Admin)</title>
 
   <!-- QR Library -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
-<style>
-  body {
-    font-family: Arial;
-    margin: 0;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #f4f6f8;
-  }
+  <style>
+    body {
+      font-family: Arial;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #f4f6f8;
+    }
 
-  .container {
-    text-align: center;
-    background: white;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-  }
+    .container {
+      text-align: center;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
 
-  canvas {
-    margin-top: 20px;
-  }
-</style>
+    canvas {
+      margin-top: 20px;
+    }
 
-  
+    #title {
+      color: #2563eb;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+  </style>
 </head>
 
 <body>
@@ -41,13 +45,18 @@
   <canvas id="qr" style="display:none;"></canvas>
 </div>
 
-
 <script>
 
 const API_URL = "https://script.google.com/macros/s/AKfycbxlwNU2c0BK_VvRGzylKf4SPydHBOobwDGeLmuYCro9e6IwucxzDb-ZggzxRGMAMm8/exec";
 
+const QR_VALIDITY_MS = 15000;   // MUST match backend
+const REFRESH_BEFORE_MS = 14000;
+
 let ADMIN_PASS = "";
 let qrInterval = null;
+let countdownInterval = null;
+let lastQR = null;
+let timeOffset = 0;
 
 /* ================= JSONP ================= */
 function jsonpRequest(url, callbackName, onSuccess, onError) {
@@ -98,9 +107,7 @@ function askPassword() {
 
   if (input === ADMIN_PASS) {
 
-    document.getElementById("title").innerText = "Dynamic QR (Active)";
     document.getElementById("qr").style.display = "block";
-
     startQR();
 
   } else {
@@ -118,31 +125,61 @@ function fetchQR() {
   jsonpRequest(url, cb, function(data) {
 
     if (data.status !== "success") {
-      console.warn("QR failed");
+      console.warn("QR fetch failed");
       return;
     }
+
+    lastQR = data.qr;
+
+    /* ===== TIME SYNC (IMPORTANT) ===== */
+    const serverNow = lastQR.timestamp;
+    const clientNow = Date.now();
+    timeOffset = serverNow - clientNow;
 
     const qrCanvas = document.getElementById("qr");
 
     QRCode.toCanvas(
       qrCanvas,
-      JSON.stringify(data.qr),
-      { width: 500, margin: 2 }
+      JSON.stringify(lastQR),
+      { width: 400, margin: 2 }
     );
+
+    updateCountdown();
 
   }, function() {
     console.warn("QR fetch error");
   });
 }
 
+/* ================= COUNTDOWN ================= */
+function updateCountdown() {
+
+  if (!lastQR) return;
+
+  const now = Date.now() + timeOffset;
+
+  const remaining = Math.max(
+    0,
+    Math.floor((lastQR.timestamp + QR_VALIDITY_MS - now) / 1000)
+  );
+
+  document.getElementById("title").innerText =
+    "QR Active | Time Left: " + remaining + "s";
+}
+
 /* ================= LOOP ================= */
 function startQR() {
 
   if (qrInterval) clearInterval(qrInterval);
+  if (countdownInterval) clearInterval(countdownInterval);
 
   fetchQR();
 
-  qrInterval = setInterval(fetchQR, 15000);
+  // refresh QR slightly before expiry
+  qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
+
+  // update countdown every second
+  countdownInterval = setInterval(updateCountdown, 1000);
 }
 
 /* ================= INIT ================= */

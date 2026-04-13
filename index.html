@@ -264,35 +264,11 @@ function startScanner(){
 
   Html5Qrcode.getCameras().then(devices => {
     if (devices.length){
-
       html5QrCode.start(
         { facingMode: "environment" },
-        {
-          fps: 20,  // 🔥 faster scanning
-
-          // 🔥 FULL FRAME SCAN (MOST IMPORTANT)
-          qrbox: null,
-
-          // 🔥 HIGH RESOLUTION VIDEO
-          videoConstraints: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            facingMode: "environment"
-          },
-
-          aspectRatio: 1.0,
-
-          // 🔥 BEST DECODER AVAILABLE
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          }
-        },
+        { fps: 10, qrbox: 250 },
         onScanSuccess
       );
-
-      // 🔥 AUTO ZOOM (CRITICAL FOR SMALL QR)
-      setTimeout(enableMaxZoom, 1200);
-
     }
   });
 }

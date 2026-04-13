@@ -56,9 +56,13 @@ button:hover{background:#0056b3;}
 #reader{width:280px;margin:auto;}
 #status{margin-top:10px;font-weight:bold;}
 
-#zoomSlider{
-  width:100%;
-  margin-top:12px;
+#zoomSlider {
+  display: none; /* Controlled via JS based on hardware support */
+  width: 100%;
+  margin-top: 12px;
+}
+.zoom-container {
+  padding: 10px 0;
 }
 .zoom-label{
   font-size:12px;
@@ -219,17 +223,30 @@ function openScanner(){
   startScanner();
 }
 
-function closeScanner(){
-
-  if (html5QrCode){
+function closeScanner() {
+  if (html5QrCode) {
     html5QrCode.stop().then(() => {
+      byId("zoomSlider").style.display = "none"; // Reset UI
+      byId("scannerSection").classList.add("hidden");
+      byId("dashboard").classList.remove("hidden");
+    }).catch(err => {
+      // Force UI switch even if stop fails
       byId("scannerSection").classList.add("hidden");
       byId("dashboard").classList.remove("hidden");
     });
   }
 }
 
-function startScanner() {
+async function startScanner() {
+  // 1. Resource Cleanup: Stop any existing instance to avoid NotReadableError
+  if (html5QrCode) {
+    try {
+      await html5QrCode.stop();
+    } catch (e) {
+      // Ignore errors if already stopped
+    }
+  }
+
   byId("status").innerText = "📷 Scanning...";
   scanLock = false;
   html5QrCode = new Html5Qrcode("reader");
@@ -246,14 +263,14 @@ function startScanner() {
     onScanSuccess
   )
   .then(() => {
-    // Crucial: Wait for the track to be active before accessing capabilities
     const track = html5QrCode.getRunningTrack();
     if (track) {
-      enableZoom(track);
+      enableZoom(track);    // Link the slider
+      optimizeCamera();      // Apply focus/exposure
     }
   })
   .catch(err => {
-    byId("status").innerText = "❌ Camera Error";
+    byId("status").innerText = "❌ Camera Error: " + err.name;
     console.error(err);
   });
 }
@@ -274,20 +291,17 @@ function enableZoom(track) {
   const slider = byId("zoomSlider");
   const capabilities = track.getCapabilities();
 
-  // Check if zoom is supported by the hardware/browser
   if (!capabilities.zoom) {
-    console.warn("Zoom not supported by this device.");
-    slider.parentElement.style.opacity = "0.3"; 
-    slider.disabled = true;
+    console.log("Hardware zoom not supported.");
+    slider.style.display = "none";
     return;
   }
 
-  // Map hardware limits to the UI slider
+  // Map hardware bounds to the slider
+  slider.style.display = "block";
   slider.min = capabilities.zoom.min;
   slider.max = capabilities.zoom.max;
   slider.step = capabilities.zoom.step || 0.1;
-  
-  // Set initial value to minimum to avoid "out of range" errors
   slider.value = capabilities.zoom.min;
 
   slider.oninput = async function() {
@@ -296,7 +310,7 @@ function enableZoom(track) {
         advanced: [{ zoom: parseFloat(this.value) }]
       });
     } catch (e) {
-      console.error("Failed to apply zoom:", e);
+      console.warn("Zoom constraint failed:", e);
     }
   };
 }

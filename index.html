@@ -227,7 +227,7 @@ function closeScanner(){
 
 function startScanner(){
 
-  scanned = false;
+  scanLock = false;
   html5QrCode = new Html5Qrcode("reader");
 
   Html5Qrcode.getCameras().then(devices => {
@@ -291,8 +291,9 @@ function enableZoom(){
 /* ================= ATTENDANCE ================= */
 function onScanSuccess(decodedText){
 
-  if (scanned) return;
-  scanned = true;
+  if (scanLock) return;
+  scanLock = true;
+
   setTimeout(() => scanLock = false, 1500);
   let qrData;
 
@@ -300,7 +301,7 @@ function onScanSuccess(decodedText){
     qrData = JSON.parse(decodedText);
   }catch{
     byId("status").innerText = "❌ Invalid QR";
-    scanned = false;
+    scanLock = false;
     return;
   }
 
@@ -328,7 +329,7 @@ function onScanSuccess(decodedText){
     }
     else if (res.status === "device_used"){
       byId("status").innerText = "🚫 Device already used";
-      scanned = false;
+      scanLock = false;
       return;
     }
     else if (res.status === "already_marked"){
@@ -336,12 +337,12 @@ function onScanSuccess(decodedText){
     }
     else if (res.status === "expired"){
       byId("status").innerText = "⏱ QR expired";
-      scanned = false;
+      scanLock = false;
       return;
     }
     else{
       byId("status").innerText = "❌ Failed";
-      scanned = false;
+      scanLock = false;
       return;
     }
 
@@ -349,7 +350,7 @@ function onScanSuccess(decodedText){
 
   }, function(){
     byId("status").innerText = "❌ Network error";
-    scanned = false;
+    scanLock = false;
   });
 }
 

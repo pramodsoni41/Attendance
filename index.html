@@ -25,10 +25,6 @@ body{
   box-shadow:0 4px 14px rgba(0,0,0,0.12);
   text-align:center;
 }
-#scannerSection:not(.hidden) #zoomSlider {
-    display: block;
-    margin: 15px auto;
-}
 input{
   width:100%;
   padding:10px;
@@ -56,13 +52,9 @@ button:hover{background:#0056b3;}
 #reader{width:280px;margin:auto;}
 #status{margin-top:10px;font-weight:bold;}
 
-#zoomSlider {
-  display: none; /* Controlled via JS based on hardware support */
-  width: 100%;
-  margin-top: 12px;
-}
-.zoom-container {
-  padding: 10px 0;
+#zoomSlider{
+  width:100%;
+  margin-top:12px;
 }
 .zoom-label{
   font-size:12px;
@@ -223,159 +215,141 @@ function openScanner(){
   startScanner();
 }
 
-function closeScanner() {
-  if (html5QrCode) {
+function closeScanner(){
+
+  if (html5QrCode){
     html5QrCode.stop().then(() => {
-      byId("zoomSlider").style.display = "none"; // Reset UI
-      byId("scannerSection").classList.add("hidden");
-      byId("dashboard").classList.remove("hidden");
-    }).catch(err => {
-      // Force UI switch even if stop fails
       byId("scannerSection").classList.add("hidden");
       byId("dashboard").classList.remove("hidden");
     });
   }
 }
 
-async function startScanner() {
-  byId("status").innerText = "📷 Initializing...";
+function startScanner(){
+byId("status").innerText = "📷 Scanning...";
   scanLock = false;
+  html5QrCode = new Html5Qrcode("reader");
 
-  if (!html5QrCode) {
-    html5QrCode = new Html5Qrcode("reader");
-  }
 
-  // Robust Teardown
-  try {
-    if (html5QrCode && html5QrCode.isScanning) {
-      await html5QrCode.stop();
-      await new Promise(r => setTimeout(r, 300));
-    }
-  } catch (e) {
-    console.warn("Teardown ignored:", e);
-  }
-
-  const config = {
-    fps: 15, // Lower FPS is more stable on older phones
+html5QrCode.start(
+  { facingMode: "environment" },
+  {
+    fps: 20,
     qrbox: { width: 220, height: 220 },
     aspectRatio: 1.0
-  };
+  },
+  onScanSuccess
+).then(() => {
+  enableZoom();
+  optimizeCamera();
+});
 
-  html5QrCode.start(
-    { facingMode: "environment" },
-    config,
-    onScanSuccess
-  )
-  .then(() => {
-    byId("status").innerText = "📷 Scanning...";
-    
-    // DELAY: Give mobile hardware a moment to populate capabilities
-    setTimeout(() => {
-      const track = html5QrCode.getRunningTrack();
-      if (track && typeof track.getCapabilities === 'function') {
-        const caps = track.getCapabilities() || {}; // FALLBACK TO EMPTY OBJECT
-        enableZoom(track, caps);
-        optimizeCamera(track, caps);
-      }
-    }, 500); 
-  })
-  .catch(err => {
-    const errorMsg = err.name || err.message || String(err);
-    byId("status").innerText = "❌ " + errorMsg;
-  });
+
 }
-function optimizeCamera(track, capabilities) {
-  if (!track || !capabilities) return;
-  const constraints = { advanced: [] };
+function optimizeCamera(){
 
-  // Check if focusMode exists within the returned capabilities object
-  if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
-    constraints.advanced.push({ focusMode: "continuous" });
-  }
-  
-  if (constraints.advanced.length > 0) {
-    track.applyConstraints(constraints).catch(() => {});
-  }
+  const track = html5QrCode.getRunningTrack();
+  if (!track) return;
+
+  try{
+    track.applyConstraints({
+      advanced: [
+        { focusMode: "continuous" },  // autofocus
+        { exposureMode: "continuous" },
+        { whiteBalanceMode: "continuous" },
+        { zoom: 2 } // default zoom for small QR
+      ]
+    });
+  }catch(e){}
 }
+/* ================= ZOOM ================= */
+function enableZoom(){
 
-function enableZoom(track, capabilities) {
   const slider = byId("zoomSlider");
-  
-  if (!capabilities || !capabilities.zoom) {
+  const track = html5QrCode.getRunningTrack();
+
+  if (!track) return;
+
+  const cap = track.getCapabilities();
+
+  if (!cap.zoom){
     slider.style.display = "none";
     return;
   }
 
-  slider.style.display = "block";
-  slider.min = capabilities.zoom.min || 1;
-  slider.max = capabilities.zoom.max || 5;
-  slider.step = capabilities.zoom.step || 0.1;
-  slider.value = capabilities.zoom.min || 1;
+  slider.min = cap.zoom.min;
+  slider.max = cap.zoom.max;
+  slider.step = cap.zoom.step || 0.1;
 
-  slider.oninput = async function() {
-    try {
-      await track.applyConstraints({
-        advanced: [{ zoom: parseFloat(this.value) }]
-      });
-    } catch (e) { console.error(e); }
+  slider.oninput = function(){
+    track.applyConstraints({
+      advanced: [{ zoom: parseFloat(this.value) }]
+    });
   };
 }
-/* ================= ZOOM ================= */
-
 
 /* ================= ATTENDANCE ================= */
-function onScanSuccess(decodedText) {
+function onScanSuccess(decodedText){
+
   if (scanLock) return;
   scanLock = true;
 
-  const studentData = localStorage.getItem("student");
-  if (!studentData) {
-    alert("Session expired. Please login again.");
-    location.reload();
-    return;
-  }
-
-  const student = JSON.parse(studentData);
+  setTimeout(() => scanLock = false, 1500);
   let qrData;
-  try {
+
+  try{
     qrData = JSON.parse(decodedText);
-  } catch (e) {
+  }catch{
     byId("status").innerText = "❌ Invalid QR";
-    setTimeout(() => { scanLock = false; }, 2000);
+    scanLock = false;
     return;
   }
 
-  byId("status").innerText = "⌛ Verifying...";
+  const student = JSON.parse(localStorage.getItem("student"));
   const device_id = getDeviceId();
+
+  byId("status").innerText = "Submitting...";
+
   const cb = "att_" + Date.now();
 
-  const url = `${API_URL}?type=mark_attendance` +
-    `&student_id=${encodeURIComponent(student.id)}` +
-    `&session_id=${encodeURIComponent(qrData.session_id || "")}` +
-    `&token=${encodeURIComponent(qrData.token || "")}` +
-    `&timestamp=${encodeURIComponent(qrData.timestamp || "")}` +
-    `&signature=${encodeURIComponent(qrData.signature || "")}` +
-    `&device_id=${encodeURIComponent(device_id)}`;
+  const url =
+    API_URL +
+    "?type=mark_attendance" +
+    "&student_id=" + student.id +
+    "&session_id=" + qrData.session_id +
+    "&token=" + qrData.token +
+    "&timestamp=" + qrData.timestamp +
+    "&signature=" + qrData.signature +
+    "&device_id=" + device_id;
 
-  jsonpRequest(url, cb, function(res) {
-    // TYPE CHECK: Ensure 'res' is an object before accessing properties
-    if (!res || typeof res !== 'object') {
-      byId("status").innerText = "❌ Server Error";
+  jsonpRequest(url, cb, function(res){
+
+    if (res.status === "success"){
+      byId("status").innerText = "✅ Attendance Marked";
+    }
+    else if (res.status === "device_used"){
+      byId("status").innerText = "🚫 Device already used";
+      scanLock = false;
+      return;
+    }
+    else if (res.status === "already_marked"){
+      byId("status").innerText = "⚠ Already marked";
+    }
+    else if (res.status === "expired"){
+      byId("status").innerText = "⏱ QR expired";
+      scanLock = false;
+      return;
+    }
+    else{
+      byId("status").innerText = "❌ Failed";
       scanLock = false;
       return;
     }
 
-    if (res.status === "success") {
-      byId("status").innerText = "✅ Attendance Marked";
-      setTimeout(() => closeScanner(), 1500);
-    } else {
-      // Map server messages or fallback
-      const msg = res.message || res.status || "Failed";
-      byId("status").innerText = "❌ " + msg;
-      setTimeout(() => { scanLock = false; }, 3000);
-    }
-  }, function() {
-    byId("status").innerText = "❌ Connection Failed";
+    setTimeout(() => closeScanner(), 1200);
+
+  }, function(){
+    byId("status").innerText = "❌ Network error";
     scanLock = false;
   });
 }

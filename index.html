@@ -31,7 +31,7 @@
 </div>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbxJtNpVq_7zNdbnc9_EIPxF6Q9jrd2QXns924U_VSzFOJlF_ujBegekt-PK7EGxrHA/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwVy7xCze35FgP8rPlr-E0XFKbutd77fjXYJU39GLR-eYUIY3wfruKkM568T5N3bu4/exec";
 
 /* ================= UTILS ================= */
 function getUrlParams() {
@@ -60,44 +60,19 @@ function getDeviceId() {
 
 /* ================= CORE LOGIC ================= */
 function handleSubmission() {
-  const params = getUrlParams();
-  const payload = params.get('p');
-  const rollNo = document.getElementById("rollNo").value.trim();
-  const statusDiv = document.getElementById("status");
-  const btn = document.getElementById("submitBtn");
+    const rollNo = document.getElementById("rollNo").value.trim();
+    const payload = sessionStorage.getItem("pending_qr");
+    const sTime = sessionStorage.getItem("scan_time"); // The stored scan moment
 
-  if (!payload) {
-    statusDiv.innerHTML = "<span style='color:red'>❌ No active QR scan detected. Please scan the classroom QR.</span>";
-    return;
-  }
+    // ... (previous setup code) ...
 
-  if (!rollNo) {
-    alert("Please enter your Roll Number.");
-    return;
-  }
-
-  // Disable UI
-  btn.disabled = true;
-  btn.innerText = "Processing...";
-  statusDiv.innerText = "⏳ Communicating with server...";
-
-  // Parse Payload (session|ts|token|sig)
-  const parts = payload.split('|');
-  const qrData = {
-    session_id: parts[0],
-    timestamp: parts[1],
-    token: parts[2],
-    signature: parts[3]
-  };
-
-  const cb = "att_" + Date.now();
-  const url = `${API_URL}?type=mark_attendance` +
-              `&student_id=${encodeURIComponent(rollNo)}` +
-              `&session_id=${qrData.session_id}` +
-              `&token=${qrData.token}` +
-              `&timestamp=${qrData.timestamp}` +
-              `&signature=${qrData.signature}` +
-              `&device_id=${getDeviceId()}`;
+    const url = `${API_URL}?type=mark_attendance` +
+                `&student_id=${encodeURIComponent(rollNo)}` +
+                `&token=${qrData.token}` +
+                `&timestamp=${qrData.timestamp}` + // Generation Time
+                `&scan_time=${sTime}` +             // Actual Scan Time
+                `&signature=${qrData.signature}` +
+                `&device_id=${getDeviceId()}`;
 
   jsonpRequest(url, cb, (res) => {
     if (res.status === "success") {
@@ -113,13 +88,27 @@ function handleSubmission() {
 }
 
 // Initial Check
-window.onload = () => {
-  const params = getUrlParams();
-  if (!params.get('p')) {
-    document.getElementById("instruction").innerText = "⚠️ Please scan the QR code from the projector screen.";
-    document.getElementById("rollNo").style.display = "none";
-    document.getElementById("submitBtn").style.display = "none";
-  }
+let scanTimestamp = null;
+
+window.onload = function() {
+    const params = new URLSearchParams(window.location.search);
+    const payload = params.get('p');
+    
+    if (payload) {
+        // Capture the EXACT moment the browser opened the QR link
+        scanTimestamp = Math.floor(Date.now() / 1000); 
+        sessionStorage.setItem("pending_qr", payload);
+        sessionStorage.setItem("scan_time", scanTimestamp);
+        
+        const qrData = processPayload(payload);
+        const genTime = parseInt(qrData.timestamp);
+        
+        // PHYSICAL PRESENCE CHECK: Was the scan within 90 seconds of generation?
+        if ((scanTimestamp - genTime) > 90) {
+            document.getElementById("formSection").classList.add("hidden");
+            document.getElementById("status").innerHTML = "<span style='color:red'>❌ QR Stale. Please scan the live QR on the screen.</span>";
+        }
+    }
 };
 </script>
 </body>

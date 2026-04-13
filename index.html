@@ -2,318 +2,125 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Attendance Portal</title>
+<title>IIT BHU Attendance</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<script src="https://unpkg.com/html5-qrcode"></script>
-
 <style>
-body{
-  font-family: Arial, sans-serif;
-  background:#f4f6f8;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  min-height:100vh;
-  margin:0;
-}
-.container{
-  background:#fff;
-  padding:25px;
-  border-radius:12px;
-  width:360px;
-  box-shadow:0 4px 14px rgba(0,0,0,0.12);
-  text-align:center;
-}
-input{
-  width:100%;
-  padding:10px;
-  margin:8px 0;
-  border:1px solid #ccc;
-  border-radius:6px;
-}
-button{
-  width:100%;
-  padding:12px;
-  margin-top:10px;
-  border:none;
-  border-radius:6px;
-  background:#007bff;
-  color:#fff;
-  font-size:16px;
-  cursor:pointer;
-}
-button:hover{background:#0056b3;}
-.logout{background:#dc3545;}
-.logout:hover{background:#a71d2a;}
-.secondary{background:#6c757d;}
-.hidden{display:none;}
-
-#reader{width:280px;margin:auto;}
-#status{margin-top:10px;font-weight:bold;}
-
-#zoomSlider{
-  width:100%;
-  margin-top:12px;
-}
-.zoom-label{
-  font-size:12px;
-  color:#666;
-}
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  .card { background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; }
+  h2 { color: #1e3a8a; margin-bottom: 20px; }
+  input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #e5e7eb; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: border 0.3s; }
+  input:focus { border-color: #2563eb; outline: none; }
+  button { width: 100%; padding: 14px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #1d4ed8; }
+  #status { margin-top: 15px; font-weight: 600; min-height: 24px; }
+  .hidden { display: none; }
 </style>
 </head>
-
 <body>
 
-<div class="container">
-
-<div id="loginSection">
-  <h2>Student Login</h2>
-  <input type="text" id="studentId" placeholder="Enter Student ID">
-  <input type="password" id="password" placeholder="Enter Password">
-  <button id="loginBtn" onclick="login()">Login</button>
-</div>
-
-<div id="dashboard" class="hidden">
-  <h2>Welcome</h2>
-  <p id="userInfo"></p>
-  <button onclick="openScanner()">📷 Mark Attendance</button>
-  <button class="logout" onclick="logout()">Logout</button>
-</div>
-
-<div id="scannerSection" class="hidden">
-  <h3 id="scanTitle">Scan QR</h3>
-  <div id="reader"></div>
-
-  <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
-  <div class="zoom-label">Zoom</div>
+<div class="card">
+  <h2>Attendance Portal</h2>
+  
+  <div id="formSection">
+    <p id="instruction">Enter Roll Number to mark attendance</p>
+    <input type="text" id="rollNo" placeholder="e.g. 21114001" autofocus>
+    <button id="submitBtn" onclick="handleSubmission()">Submit Attendance</button>
+  </div>
 
   <div id="status"></div>
-  <button class="secondary" onclick="closeScanner()">⬅ Back</button>
-</div>
-
 </div>
 
 <script>
-/* ================= CONFIG ================= */
 const API_URL = "https://script.google.com/macros/s/AKfycbyNJF-yE_YeEec9w6_bpcfhHQAPvoMYKCDNOAEYYH8o_CQRhwt6pY3oTRzz2GNahIA/exec";
-let html5QrCode = null;
-let scanLock = false;
 
-/* ================= HELPERS ================= */
-function byId(id){ return document.getElementById(id); }
+/* ================= UTILS ================= */
+function getUrlParams() {
+  return new URLSearchParams(window.location.search);
+}
 
-function jsonpRequest(url, callbackName, onSuccess, onError){
-  window[callbackName] = function(data){
+function jsonpRequest(url, callbackName, onSuccess) {
+  const script = document.createElement("script");
+  window[callbackName] = (data) => {
+    script.remove();
     delete window[callbackName];
     onSuccess(data);
   };
-  const script = document.createElement("script");
-  script.src = url + "&callback=" + callbackName;
-  script.onerror = function(){
-    delete window[callbackName];
-    if (onError) onError();
-  };
+  script.src = `${url}&callback=${callbackName}`;
   document.body.appendChild(script);
 }
 
 function getDeviceId() {
-  const EXPIRY_MINUTES = 30;
-  const now = Date.now();
-  let stored = localStorage.getItem("device_data");
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      if ((now - parsed.timestamp) / (1000 * 60) < EXPIRY_MINUTES) return parsed.id;
-    } catch(e){}
+  let id = localStorage.getItem("device_id");
+  if (!id) {
+    id = "DEV-" + Math.random().toString(36).substring(2, 10) + Date.now();
+    localStorage.setItem("device_id", id);
   }
-  const newId = "DEV-" + Math.random().toString(36).substring(2) + now;
-  localStorage.setItem("device_data", JSON.stringify({id: newId, timestamp: now}));
-  return newId;
+  return id;
 }
 
-/* ================= URL & PAYLOAD LOGIC ================= */
-function processPayload(rawPayload) {
-  if (!rawPayload) return null;
-  // Payload expected format: session|ts|token|sig
-  const parts = rawPayload.split('|');
-  if (parts.length < 4) return null;
-  return {
+/* ================= CORE LOGIC ================= */
+function handleSubmission() {
+  const params = getUrlParams();
+  const payload = params.get('p');
+  const rollNo = document.getElementById("rollNo").value.trim();
+  const statusDiv = document.getElementById("status");
+  const btn = document.getElementById("submitBtn");
+
+  if (!payload) {
+    statusDiv.innerHTML = "<span style='color:red'>❌ No active QR scan detected. Please scan the classroom QR.</span>";
+    return;
+  }
+
+  if (!rollNo) {
+    alert("Please enter your Roll Number.");
+    return;
+  }
+
+  // Disable UI
+  btn.disabled = true;
+  btn.innerText = "Processing...";
+  statusDiv.innerText = "⏳ Communicating with server...";
+
+  // Parse Payload (session|ts|token|sig)
+  const parts = payload.split('|');
+  const qrData = {
     session_id: parts[0],
     timestamp: parts[1],
     token: parts[2],
     signature: parts[3]
   };
-}
 
-/* ================= LOGIN ================= */
-function login() {
-    const id = byId("studentId").value.trim();
-    const pass = byId("password").value.trim();
-    const btn = byId("loginBtn");
+  const cb = "att_" + Date.now();
+  const url = `${API_URL}?type=mark_attendance` +
+              `&student_id=${encodeURIComponent(rollNo)}` +
+              `&session_id=${qrData.session_id}` +
+              `&token=${qrData.token}` +
+              `&timestamp=${qrData.timestamp}` +
+              `&signature=${qrData.signature}` +
+              `&device_id=${getDeviceId()}`;
 
-    if (!id || !pass) {
-        alert("Enter ID and Password");
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerText = "Verifying...";
-
-    const cb = "login_" + Date.now();
-    const url = `${API_URL}?type=login&id=${id}&pass=${pass}`;
-
-    jsonpRequest(url, cb, function(data) {
-        btn.disabled = false;
-        btn.innerText = "Login";
-
-        if (data.status === "success") {
-            // Save verified student data from Google Sheets
-            localStorage.setItem("student", JSON.stringify(data.student));
-            
-            // Check if we came here from a QR scan
-            const pending = sessionStorage.getItem("pending_qr");
-            if (pending) {
-                showDashboard();
-                submitAttendance(processPayload(pending));
-                sessionStorage.removeItem("pending_qr"); // Clear after use
-            } else {
-                showDashboard();
-            }
-        } else {
-            alert("Verification Failed: " + data.message);
-        }
-    });
-}
-
-/* ================= ATTENDANCE ================= */
-function submitAttendance(qrData) {
-    // ... (previous setup code)
-    
-    jsonpRequest(url, cb, function(res) {
-        if (res.status === "success") {
-            byId("status").innerHTML = "<span style='color:green'>✅ Attendance Recorded!</span>";
-        } else if (res.status === "student_not_found") {
-            // If the sheet doesn't recognize the ID, force a re-login
-            byId("status").innerHTML = "<span style='color:red'>❌ Identity Mismatch. Re-logging...</span>";
-            localStorage.removeItem("student");
-            setTimeout(() => location.reload(), 2000);
-        } else {
-            byId("status").innerHTML = `<span style='color:red'>❌ ${res.status.replace(/_/g, ' ')}</span>`;
-        }
-        
-        setTimeout(() => {
-            window.location.href = window.location.origin + window.location.pathname;
-        }, 3000);
-    });
-}
-
-/* ================= SCANNER ================= */
-function onScanSuccess(decodedText){
-  if (scanLock) return;
-  scanLock = true;
-
-  let payload = decodedText;
-  
-  // If user scanned a URL manually inside the app, extract the 'p' parameter
-  if (decodedText.includes('?p=')) {
-    payload = new URLSearchParams(decodedText.split('?')[1]).get('p');
-  }
-
-  const qrData = processPayload(payload);
-  if (!qrData) {
-    byId("status").innerText = "❌ Invalid QR Format";
-    setTimeout(() => scanLock = false, 2000);
-    return;
-  }
-
-  submitAttendance(qrData);
-}
-
-function openScanner(){
-  byId("dashboard").classList.add("hidden");
-  byId("scannerSection").classList.remove("hidden");
-  byId("reader").style.display = "block";
-  startScanner();
-}
-
-function closeScanner(){
-  if (html5QrCode){
-    html5QrCode.stop().then(() => {
-      byId("scannerSection").classList.add("hidden");
-      byId("dashboard").classList.remove("hidden");
-    });
-  } else {
-    byId("scannerSection").classList.add("hidden");
-    byId("dashboard").classList.remove("hidden");
-  }
-}
-
-function startScanner(){
-  byId("status").innerText = "📷 Scanning...";
-  scanLock = false;
-  html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 20, qrbox: { width: 220, height: 220 } },
-    onScanSuccess
-  ).then(enableZoom);
-}
-
-function enableZoom(){
-  const slider = byId("zoomSlider");
-  const track = html5QrCode.getRunningTrack();
-  if (!track || !track.getCapabilities().zoom) {
-    slider.style.display = "none";
-    return;
-  }
-  const cap = track.getCapabilities();
-  slider.min = cap.zoom.min;
-  slider.max = cap.zoom.max;
-  slider.oninput = function(){
-    track.applyConstraints({ advanced: [{ zoom: parseFloat(this.value) }] });
-  };
-}
-
-/* ================= INITIALIZATION ================= */
-function showDashboard(){
-  const student = JSON.parse(localStorage.getItem("student"));
-  if (!student) return;
-  byId("loginSection").classList.add("hidden");
-  byId("dashboard").classList.remove("hidden");
-  byId("userInfo").innerText = `${student.name} (${student.id})`;
-}
-
-function logout(){
-  localStorage.removeItem("student");
-  location.reload();
-}
-
-window.onload = function() {
-    const params = new URLSearchParams(window.location.search);
-    const payload = params.get('p');
-    const student = JSON.parse(localStorage.getItem("student"));
-
-    if (payload) {
-        // Store the QR data immediately in session memory
-        sessionStorage.setItem("pending_qr", payload);
-        
-        if (student) {
-            // If already logged in, verify and submit
-            showDashboard();
-            submitAttendance(processPayload(payload));
-        } else {
-            // Force Login if no session is found
-            byId("loginSection").classList.remove("hidden");
-            byId("dashboard").classList.add("hidden");
-            byId("status").innerHTML = "<span style='color:#2563eb'>QR Detected: Please Login to verify identity.</span>";
-        }
+  jsonpRequest(url, cb, (res) => {
+    if (res.status === "success") {
+      statusDiv.innerHTML = "<span style='color:green'>✅ Attendance Recorded Successfully!</span>";
+      document.getElementById("formSection").classList.add("hidden");
     } else {
-        // Normal visit
-        if (student) showDashboard();
+      btn.disabled = false;
+      btn.innerText = "Retry Submission";
+      let errorMsg = res.status.replace(/_/g, ' ').toUpperCase();
+      statusDiv.innerHTML = `<span style='color:red'>❌ Error: ${errorMsg}</span>`;
     }
+  });
+}
+
+// Initial Check
+window.onload = () => {
+  const params = getUrlParams();
+  if (!params.get('p')) {
+    document.getElementById("instruction").innerText = "⚠️ Please scan the QR code from the projector screen.";
+    document.getElementById("rollNo").style.display = "none";
+    document.getElementById("submitBtn").style.display = "none";
+  }
 };
 </script>
-
 </body>
 </html>

@@ -226,25 +226,25 @@ function closeScanner(){
 }
 
 function startScanner(){
-
+byId("status").innerText = "📷 Scanning...";
   scanLock = false;
   html5QrCode = new Html5Qrcode("reader");
 
-  Html5Qrcode.getCameras().then(devices => {
-    if (devices.length){
 
-      html5QrCode.start(
-        { facingMode: "environment" },
-        {
-          fps: 18,
-          qrbox: { width: 200, height: 200 },
-          aspectRatio: 1.0
-        },
-        onScanSuccess
-      ).then(() => enableZoom());
-      optimizeCamera();
-    }
-  });
+html5QrCode.start(
+  { facingMode: "environment" },
+  {
+    fps: 20,
+    qrbox: { width: 220, height: 220 },
+    aspectRatio: 1.0
+  },
+  onScanSuccess
+).then(() => {
+  enableZoom();
+  optimizeCamera();
+});
+
+
 }
 function optimizeCamera(){
 

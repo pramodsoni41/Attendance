@@ -241,29 +241,26 @@ async function startScanner() {
   byId("status").innerText = "📷 Initializing...";
   scanLock = false;
 
-  // 1. Singleton Pattern: Ensure only one instance exists
   if (!html5QrCode) {
     html5QrCode = new Html5Qrcode("reader");
   }
 
-  // 2. State Teardown
-  if (html5QrCode.isScanning) {
-    try {
+  // Robust Teardown
+  try {
+    if (html5QrCode && html5QrCode.isScanning) {
       await html5QrCode.stop();
-      // 3. Temporal Buffer: Wait for Hardware Release
-      await new Promise(resolve => setTimeout(resolve, 300));
-    } catch (e) {
-      console.warn("Stop failed, likely already inactive.");
+      await new Promise(r => setTimeout(r, 300));
     }
+  } catch (e) {
+    console.warn("Teardown ignored:", e);
   }
 
   const config = {
-    fps: 20,
+    fps: 15, // Lower FPS is more stable on older phones
     qrbox: { width: 220, height: 220 },
     aspectRatio: 1.0
   };
 
-  // 4. Start Scan
   html5QrCode.start(
     { facingMode: "environment" },
     config,
@@ -271,72 +268,60 @@ async function startScanner() {
   )
   .then(() => {
     byId("status").innerText = "📷 Scanning...";
-    const track = html5QrCode.getRunningTrack();
-    if (track) {
-      enableZoom(track);
-      optimizeCamera();
-    }
+    
+    // DELAY: Give mobile hardware a moment to populate capabilities
+    setTimeout(() => {
+      const track = html5QrCode.getRunningTrack();
+      if (track && typeof track.getCapabilities === 'function') {
+        const caps = track.getCapabilities() || {}; // FALLBACK TO EMPTY OBJECT
+        enableZoom(track, caps);
+        optimizeCamera(track, caps);
+      }
+    }, 500); 
   })
   .catch(err => {
-    // 5. Robust Error Reporting
-    const errorMsg = err.name || err.message || err || "Unknown Error";
+    const errorMsg = err.name || err.message || String(err);
     byId("status").innerText = "❌ " + errorMsg;
-    
-    if (errorMsg.includes("NotReadableError")) {
-      byId("status").innerText = "❌ Camera Busy: Close other apps";
-    }
-    console.error("Scanner Error:", err);
   });
 }
-function optimizeCamera() {
-  const track = html5QrCode.getRunningTrack();
-  if (!track || typeof track.getCapabilities !== 'function') return;
-
-  const capabilities = track.getCapabilities();
+function optimizeCamera(track, capabilities) {
+  if (!track || !capabilities) return;
   const constraints = { advanced: [] };
 
+  // Check if focusMode exists within the returned capabilities object
   if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
     constraints.advanced.push({ focusMode: "continuous" });
   }
   
   if (constraints.advanced.length > 0) {
-    track.applyConstraints(constraints).catch(e => console.warn("Constraints failed", e));
+    track.applyConstraints(constraints).catch(() => {});
   }
 }
-/* ================= ZOOM ================= */
-function enableZoom(track) {
+
+function enableZoom(track, capabilities) {
   const slider = byId("zoomSlider");
   
-  // Feature detection for getCapabilities
-  if (typeof track.getCapabilities !== 'function') {
-    slider.style.display = "none";
-    return;
-  }
-
-  const capabilities = track.getCapabilities();
-
   if (!capabilities || !capabilities.zoom) {
     slider.style.display = "none";
     return;
   }
 
   slider.style.display = "block";
-  slider.min = capabilities.zoom.min;
-  slider.max = capabilities.zoom.max;
+  slider.min = capabilities.zoom.min || 1;
+  slider.max = capabilities.zoom.max || 5;
   slider.step = capabilities.zoom.step || 0.1;
-  // Fallback to min if current zoom is undefined
-  slider.value = capabilities.zoom.current || capabilities.zoom.min;
+  slider.value = capabilities.zoom.min || 1;
 
   slider.oninput = async function() {
     try {
       await track.applyConstraints({
         advanced: [{ zoom: parseFloat(this.value) }]
       });
-    } catch (e) {
-      console.warn("Zoom adjustment failed:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 }
+/* ================= ZOOM ================= */
+
 
 /* ================= ATTENDANCE ================= */
 function onScanSuccess(decodedText) {
@@ -345,45 +330,52 @@ function onScanSuccess(decodedText) {
 
   const studentData = localStorage.getItem("student");
   if (!studentData) {
-    byId("status").innerText = "❌ Session Expired. Please Login.";
-    scanLock = false;
+    alert("Session expired. Please login again.");
+    location.reload();
     return;
   }
 
   const student = JSON.parse(studentData);
   let qrData;
-
   try {
     qrData = JSON.parse(decodedText);
   } catch (e) {
-    byId("status").innerText = "❌ Invalid QR Format";
+    byId("status").innerText = "❌ Invalid QR";
     setTimeout(() => { scanLock = false; }, 2000);
     return;
   }
 
-  // Ensure QR contains necessary keys
-  if (!qrData.session_id || !qrData.token) {
-    byId("status").innerText = "❌ Incomplete QR Data";
-    scanLock = false;
-    return;
-  }
-
-  byId("status").innerText = "Submitting...";
+  byId("status").innerText = "⌛ Verifying...";
   const device_id = getDeviceId();
   const cb = "att_" + Date.now();
 
   const url = `${API_URL}?type=mark_attendance` +
     `&student_id=${encodeURIComponent(student.id)}` +
-    `&session_id=${encodeURIComponent(qrData.session_id)}` +
-    `&token=${encodeURIComponent(qrData.token)}` +
-    `&timestamp=${encodeURIComponent(qrData.timestamp)}` +
-    `&signature=${encodeURIComponent(qrData.signature)}` +
+    `&session_id=${encodeURIComponent(qrData.session_id || "")}` +
+    `&token=${encodeURIComponent(qrData.token || "")}` +
+    `&timestamp=${encodeURIComponent(qrData.timestamp || "")}` +
+    `&signature=${encodeURIComponent(qrData.signature || "")}` +
     `&device_id=${encodeURIComponent(device_id)}`;
 
   jsonpRequest(url, cb, function(res) {
-    // ... logic remains same ...
+    // TYPE CHECK: Ensure 'res' is an object before accessing properties
+    if (!res || typeof res !== 'object') {
+      byId("status").innerText = "❌ Server Error";
+      scanLock = false;
+      return;
+    }
+
+    if (res.status === "success") {
+      byId("status").innerText = "✅ Attendance Marked";
+      setTimeout(() => closeScanner(), 1500);
+    } else {
+      // Map server messages or fallback
+      const msg = res.message || res.status || "Failed";
+      byId("status").innerText = "❌ " + msg;
+      setTimeout(() => { scanLock = false; }, 3000);
+    }
   }, function() {
-    byId("status").innerText = "❌ Network error";
+    byId("status").innerText = "❌ Connection Failed";
     scanLock = false;
   });
 }

@@ -51,7 +51,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxnEpKIRR2BSV1SlUsA54oT
 
 const QR_VALIDITY_MS = 60000;  // 60 sec (recommended)
 const TOKEN_CACHE_SEC = 60;
-
+const REFRESH_BEFORE_MS = 55000;  // refresh 5 sec before expiry
 let ADMIN_PASS = "";
 let qrInterval = null;
 let countdownInterval = null;
@@ -158,10 +158,13 @@ function updateCountdown() {
 
   const now = Date.now() + timeOffset;
 
-  const remaining = Math.max(
-    0,
-    Math.floor((lastQR.timestamp + QR_VALIDITY_MS - now) / 1000)
-  );
+  const expiry = lastQR.timestamp + QR_VALIDITY_MS;
+  const remaining = Math.floor((expiry - now) / 1000);
+
+  if (remaining <= 0) {
+    document.getElementById("title").innerText = "⛔ QR Expired";
+    return;
+  }
 
   document.getElementById("title").innerText =
     "QR Active | Time Left: " + remaining + "s";
@@ -175,10 +178,8 @@ function startQR() {
 
   fetchQR();
 
-  // refresh QR slightly before expiry
   qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
 
-  // update countdown every second
   countdownInterval = setInterval(updateCountdown, 1000);
 }
 

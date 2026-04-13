@@ -103,7 +103,7 @@ button:hover{background:#0056b3;}
 const API_URL = "https://script.google.com/macros/s/AKfycbxnEpKIRR2BSV1SlUsA54oTWzw_DIzfTK8sm3KYx5ypG3AqHRit-anwX7OCRrfb5XA/exec";
 
 let html5QrCode = null;
-let scanned = false;
+let scanLock = false;
 
 /* ================= HELPERS ================= */
 function byId(id){ return document.getElementById(id); }
@@ -236,15 +236,32 @@ function startScanner(){
       html5QrCode.start(
         { facingMode: "environment" },
         {
-          fps: 12,
-          qrbox: 150
+          fps: 18,
+          qrbox: { width: 200, height: 200 },
+          aspectRatio: 1.0
         },
         onScanSuccess
       ).then(() => enableZoom());
+      optimizeCamera();
     }
   });
 }
+function optimizeCamera(){
 
+  const track = html5QrCode.getRunningTrack();
+  if (!track) return;
+
+  try{
+    track.applyConstraints({
+      advanced: [
+        { focusMode: "continuous" },  // autofocus
+        { exposureMode: "continuous" },
+        { whiteBalanceMode: "continuous" },
+        { zoom: 2 } // default zoom for small QR
+      ]
+    });
+  }catch(e){}
+}
 /* ================= ZOOM ================= */
 function enableZoom(){
 
@@ -276,7 +293,7 @@ function onScanSuccess(decodedText){
 
   if (scanned) return;
   scanned = true;
-
+  setTimeout(() => scanLock = false, 1500);
   let qrData;
 
   try{

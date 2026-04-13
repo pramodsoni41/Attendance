@@ -116,13 +116,7 @@ function askPassword() {
   }
 }
 
-/* ================= FETCH QR ================= */
-Yes, that is exactly where you define the destination. Since your portal is hosted at https://pramodsoni.in/Attendance/, you should use that specific URL so the student's phone knows where to go.
 
-In your Admin QR Generator (the page you use to show the QR code to the class), update the fetchQR function like this:
-
-JavaScript
-/* ================= FETCH QR (IN ADMIN HTML) ================= */
 /* ================= FETCH QR (FIXED ADMIN SIDE) ================= */
 function fetchQR() {
   const cb = "qr_" + Date.now();

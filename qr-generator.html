@@ -49,8 +49,15 @@
 
 const API_URL = "https://script.google.com/macros/s/AKfycbz5Ex1JgRLyCE-wBje-okGbvtNlpX1_G33zsPgzgiCuC8Po3lB39lmfnflw55CCFAI/exec";
 
-const QR_VALIDITY_MS = 15000;   // MUST match backend
-const REFRESH_BEFORE_MS = 14000;
+if (type === "get_config") {
+  return jsonp(callback, {
+    status: "success",
+    config: {
+      qr_expiry: getConfigValue("qr_expiry"),
+      qr_refresh: getConfigValue("qr_refresh")
+    }
+  });
+}
 
 let ADMIN_PASS = "";
 let qrInterval = null;
@@ -120,7 +127,7 @@ function askPassword() {
 function fetchQR() {
 
   const cb = "qr_" + Date.now();
-  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
+  const url = `${API_URL}?type=generate_qr`;
 
   jsonpRequest(url, cb, function(data) {
 

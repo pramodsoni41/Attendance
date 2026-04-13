@@ -100,7 +100,7 @@ button:hover{background:#0056b3;}
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbz5Ex1JgRLyCE-wBje-okGbvtNlpX1_G33zsPgzgiCuC8Po3lB39lmfnflw55CCFAI/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycby7ViPjLulpIkr19rbc-YCQWeEtSq9vlwOzCjVRDGiKL-MMtnZQ-HxKm_qSX4BKYI8/exec";
 
 let html5QrCode = null;
 let scanned = false;
@@ -237,7 +237,7 @@ function startScanner(){
         { facingMode: "environment" },
         {
           fps: 12,
-          qrbox: 180
+          qrbox: 150
         },
         onScanSuccess
       ).then(() => enableZoom());

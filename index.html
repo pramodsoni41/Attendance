@@ -12,8 +12,9 @@
   input:focus { border-color: #2563eb; outline: none; }
   button { width: 100%; padding: 14px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
   button:hover { background: #1d4ed8; }
-  #status { margin-top: 15px; font-weight: 600; min-height: 24px; }
+  #status { margin-top: 15px; font-weight: 600; min-height: 24px; font-size: 14px; }
   .hidden { display: none; }
+  .instruction { color: #4b5563; font-size: 14px; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -22,7 +23,7 @@
   <h2>Attendance Portal</h2>
   
   <div id="formSection">
-    <p id="instruction">Enter Roll Number to mark attendance</p>
+    <p class="instruction" id="instruction">Enter Roll Number to mark attendance</p>
     <input type="text" id="rollNo" placeholder="e.g. 21114001" autofocus>
     <button id="submitBtn" onclick="handleSubmission()">Submit Attendance</button>
   </div>
@@ -31,11 +32,25 @@
 </div>
 
 <script>
+// Replace with your latest Deployment Web App URL
 const API_URL = "https://script.google.com/macros/s/AKfycbwVy7xCze35FgP8rPlr-E0XFKbutd77fjXYJU39GLR-eYUIY3wfruKkM568T5N3bu4/exec";
 
 /* ================= UTILS ================= */
-function getUrlParams() {
-  return new URLSearchParams(window.location.search);
+function byId(id) { return document.getElementById(id); }
+
+function getUrlParams() { return new URLSearchParams(window.location.search); }
+
+// Helper to parse the pipe-delimited QR string
+function processPayload(raw) {
+  if (!raw) return null;
+  const parts = raw.split('|');
+  if (parts.length < 4) return null;
+  return {
+    session_id: parts[0],
+    timestamp: parts[1],
+    token: parts[2],
+    signature: parts[3]
+  };
 }
 
 function jsonpRequest(url, callbackName, onSuccess) {
@@ -60,24 +75,45 @@ function getDeviceId() {
 
 /* ================= CORE LOGIC ================= */
 function handleSubmission() {
-    const rollNo = document.getElementById("rollNo").value.trim();
-    const payload = sessionStorage.getItem("pending_qr");
-    const sTime = sessionStorage.getItem("scan_time"); // The stored scan moment
+  const rollNo = byId("rollNo").value.trim();
+  const payload = sessionStorage.getItem("pending_qr");
+  const sTime = sessionStorage.getItem("scan_time");
+  const statusDiv = byId("status");
+  const btn = byId("submitBtn");
 
-    // ... (previous setup code) ...
+  if (!payload || !sTime) {
+    statusDiv.innerHTML = "<span style='color:red'>❌ Error: No valid scan session found. Please re-scan.</span>";
+    return;
+  }
 
-    const url = `${API_URL}?type=mark_attendance` +
-                `&student_id=${encodeURIComponent(rollNo)}` +
-                `&token=${qrData.token}` +
-                `&timestamp=${qrData.timestamp}` + // Generation Time
-                `&scan_time=${sTime}` +             // Actual Scan Time
-                `&signature=${qrData.signature}` +
-                `&device_id=${getDeviceId()}`;
+  if (!rollNo) {
+    alert("Please enter your Roll Number.");
+    return;
+  }
+
+  // Parse payload so we can extract token, original timestamp, etc.
+  const qrData = processPayload(payload);
+  if (!qrData) return;
+
+  // UI Feedback
+  btn.disabled = true;
+  btn.innerText = "Processing...";
+  statusDiv.innerText = "⏳ Recording attendance...";
+
+  const cb = "att_" + Date.now();
+  const url = `${API_URL}?type=mark_attendance` +
+              `&student_id=${encodeURIComponent(rollNo)}` +
+              `&session_id=${qrData.session_id}` +
+              `&token=${qrData.token}` +
+              `&timestamp=${qrData.timestamp}` + // Generation Time
+              `&scan_time=${sTime}` +             // Scanned Time
+              `&signature=${qrData.signature}` +
+              `&device_id=${getDeviceId()}`;
 
   jsonpRequest(url, cb, (res) => {
     if (res.status === "success") {
       statusDiv.innerHTML = "<span style='color:green'>✅ Attendance Recorded Successfully!</span>";
-      document.getElementById("formSection").classList.add("hidden");
+      byId("formSection").classList.add("hidden");
     } else {
       btn.disabled = false;
       btn.innerText = "Retry Submission";
@@ -87,28 +123,36 @@ function handleSubmission() {
   });
 }
 
-// Initial Check
-let scanTimestamp = null;
-
+/* ================= INITIALIZATION ================= */
 window.onload = function() {
-    const params = new URLSearchParams(window.location.search);
-    const payload = params.get('p');
+  const params = getUrlParams();
+  const payload = params.get('p');
+  const statusDiv = byId("status");
+  
+  if (payload) {
+    // 1. Capture the EXACT moment the browser opened the QR link
+    const scanTimestamp = Math.floor(Date.now() / 1000); 
+    sessionStorage.setItem("pending_qr", payload);
+    sessionStorage.setItem("scan_time", scanTimestamp);
     
-    if (payload) {
-        // Capture the EXACT moment the browser opened the QR link
-        scanTimestamp = Math.floor(Date.now() / 1000); 
-        sessionStorage.setItem("pending_qr", payload);
-        sessionStorage.setItem("scan_time", scanTimestamp);
-        
-        const qrData = processPayload(payload);
-        const genTime = parseInt(qrData.timestamp);
-        
-        // PHYSICAL PRESENCE CHECK: Was the scan within 90 seconds of generation?
-        if ((scanTimestamp - genTime) > 90) {
-            document.getElementById("formSection").classList.add("hidden");
-            document.getElementById("status").innerHTML = "<span style='color:red'>❌ QR Stale. Please scan the live QR on the screen.</span>";
-        }
+    const qrData = processPayload(payload);
+    if (!qrData) {
+      statusDiv.innerHTML = "<span style='color:red'>❌ Invalid QR Data Format.</span>";
+      return;
     }
+
+    const genTime = parseInt(qrData.timestamp);
+    
+    // 2. PHYSICAL PRESENCE CHECK: Was the scan within 90 seconds of generation?
+    if ((scanTimestamp - genTime) > 90) {
+      byId("formSection").classList.add("hidden");
+      statusDiv.innerHTML = "<span style='color:red'>❌ QR Stale. Please scan the live QR on the screen.</span>";
+    }
+  } else {
+    // 3. Fallback: Page opened without a QR payload
+    byId("formSection").classList.add("hidden");
+    statusDiv.innerHTML = "<span style='color:#1e3a8a'>⚠️ No active scan detected. Please scan the classroom QR code.</span>";
+  }
 };
 </script>
 </body>

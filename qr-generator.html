@@ -51,7 +51,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxnEpKIRR2BSV1SlUsA54oT
 
 let QR_VALIDITY_MS = 60000; // default fallback
 const TOKEN_CACHE_SEC = 60;
-const REFRESH_BEFORE_MS = 55000;  // refresh 5 sec before expiry
+let  REFRESH_BEFORE_MS = 55000;  // refresh 5 sec before expiry
 let ADMIN_PASS = "";
 let qrInterval = null;
 let countdownInterval = null;
@@ -131,12 +131,13 @@ function fetchQR() {
 
     lastQR = data.qr;
 
-    /* ✅ USE BACKEND VALIDITY */
+    /* ✅ DYNAMIC VALIDITY */
     if (data.validity_sec) {
       QR_VALIDITY_MS = data.validity_sec * 1000;
+      REFRESH_BEFORE_MS = Math.max(5000, QR_VALIDITY_MS - 5000);
     }
 
-    /* ✅ CORRECT TIME SYNC */
+    /* ✅ TIME SYNC */
     const serverNow = data.server_time;
     const clientNow = Date.now();
     timeOffset = serverNow - clientNow;
@@ -149,9 +150,12 @@ function fetchQR() {
       { width: 400, margin: 2 }
     );
 
-    /* ✅ RESET TIMER CLEANLY */
+    /* ✅ RESET TIMERS */
     clearInterval(countdownInterval);
     countdownInterval = setInterval(updateCountdown, 1000);
+
+    clearInterval(qrInterval);
+    qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
 
     updateCountdown();
 

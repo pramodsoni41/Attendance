@@ -147,79 +147,65 @@ function processPayload(rawPayload) {
 }
 
 /* ================= LOGIN ================= */
-function login(){
-  const id = byId("studentId").value.trim();
-  const pass = byId("password").value.trim();
-  const btn = byId("loginBtn");
+function login() {
+    const id = byId("studentId").value.trim();
+    const pass = byId("password").value.trim();
+    const btn = byId("loginBtn");
 
-  if (!id || !pass){ alert("Enter ID and Password"); return; }
-
-  btn.disabled = true;
-  btn.innerText = "Logging in...";
-
-  const cb = "login_" + Date.now();
-  const url = `${API_URL}?type=login&id=${id}&pass=${pass}`;
-
-  jsonpRequest(url, cb, function(data){
-    btn.disabled = false;
-    btn.innerText = "Login";
-
-    if (data.status === "success"){
-      localStorage.setItem("student", JSON.stringify(data.student));
-      
-      // Check for pending attendance after successful login
-      const pending = sessionStorage.getItem("pending_qr");
-      if (pending) {
-        showDashboard();
-        submitAttendance(processPayload(pending));
-        sessionStorage.removeItem("pending_qr");
-      } else {
-        showDashboard();
-      }
-    } else {
-      alert("Invalid ID or Password");
+    if (!id || !pass) {
+        alert("Enter ID and Password");
+        return;
     }
-  }, () => {
-    btn.disabled = false;
-    btn.innerText = "Login";
-    alert("Network error");
-  });
+
+    btn.disabled = true;
+    btn.innerText = "Verifying...";
+
+    const cb = "login_" + Date.now();
+    const url = `${API_URL}?type=login&id=${id}&pass=${pass}`;
+
+    jsonpRequest(url, cb, function(data) {
+        btn.disabled = false;
+        btn.innerText = "Login";
+
+        if (data.status === "success") {
+            // Save verified student data from Google Sheets
+            localStorage.setItem("student", JSON.stringify(data.student));
+            
+            // Check if we came here from a QR scan
+            const pending = sessionStorage.getItem("pending_qr");
+            if (pending) {
+                showDashboard();
+                submitAttendance(processPayload(pending));
+                sessionStorage.removeItem("pending_qr"); // Clear after use
+            } else {
+                showDashboard();
+            }
+        } else {
+            alert("Verification Failed: " + data.message);
+        }
+    });
 }
 
 /* ================= ATTENDANCE ================= */
 function submitAttendance(qrData) {
-  const student = JSON.parse(localStorage.getItem("student"));
-  if (!student || !qrData) return;
-
-  const device_id = getDeviceId();
-  
-  // Update UI to show submission status
-  byId("loginSection").classList.add("hidden");
-  byId("dashboard").classList.add("hidden");
-  byId("scannerSection").classList.remove("hidden");
-  byId("reader").style.display = "none"; 
-  byId("scanTitle").innerText = "Processing Attendance";
-  byId("status").innerText = "⌛ Submitting to server...";
-
-  const cb = "att_" + Date.now();
-  const url = `${API_URL}?type=mark_attendance&student_id=${student.id}&session_id=${qrData.session_id}&token=${qrData.token}&timestamp=${qrData.timestamp}&signature=${qrData.signature}&device_id=${device_id}`;
-
-  jsonpRequest(url, cb, function(res){
-    if (res.status === "success"){
-      byId("status").innerHTML = "<span style='color:green'>✅ Attendance Marked!</span>";
-    } else {
-      let msg = res.status.replace(/_/g, ' ').toUpperCase();
-      byId("status").innerHTML = `<span style='color:red'>❌ ${msg}</span>`;
-    }
+    // ... (previous setup code)
     
-    // Clean URL and return to dashboard after delay
-    setTimeout(() => {
-        window.location.href = window.location.origin + window.location.pathname;
-    }, 3000);
-
-  }, () => {
-    byId("status").innerText = "❌ Network error";
-  });
+    jsonpRequest(url, cb, function(res) {
+        if (res.status === "success") {
+            byId("status").innerHTML = "<span style='color:green'>✅ Attendance Recorded!</span>";
+        } else if (res.status === "student_not_found") {
+            // If the sheet doesn't recognize the ID, force a re-login
+            byId("status").innerHTML = "<span style='color:red'>❌ Identity Mismatch. Re-logging...</span>";
+            localStorage.removeItem("student");
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            byId("status").innerHTML = `<span style='color:red'>❌ ${res.status.replace(/_/g, ' ')}</span>`;
+        }
+        
+        setTimeout(() => {
+            window.location.href = window.location.origin + window.location.pathname;
+        }, 3000);
+    });
 }
 
 /* ================= SCANNER ================= */
@@ -304,22 +290,28 @@ function logout(){
 }
 
 window.onload = function() {
-  const params = new URLSearchParams(window.location.search);
-  const payload = params.get('p');
-  const student = localStorage.getItem("student");
+    const params = new URLSearchParams(window.location.search);
+    const payload = params.get('p');
+    const student = JSON.parse(localStorage.getItem("student"));
 
-  if (payload) {
-    if (student) {
-      showDashboard();
-      submitAttendance(processPayload(payload));
+    if (payload) {
+        // Store the QR data immediately in session memory
+        sessionStorage.setItem("pending_qr", payload);
+        
+        if (student) {
+            // If already logged in, verify and submit
+            showDashboard();
+            submitAttendance(processPayload(payload));
+        } else {
+            // Force Login if no session is found
+            byId("loginSection").classList.remove("hidden");
+            byId("dashboard").classList.add("hidden");
+            byId("status").innerHTML = "<span style='color:#2563eb'>QR Detected: Please Login to verify identity.</span>";
+        }
     } else {
-      sessionStorage.setItem("pending_qr", payload);
-      alert("QR Scanned! Please login to confirm attendance.");
-      showDashboard(); // Will show login since student is null
+        // Normal visit
+        if (student) showDashboard();
     }
-  } else {
-    showDashboard();
-  }
 };
 </script>
 

@@ -238,18 +238,24 @@ function closeScanner() {
 }
 
 async function startScanner() {
-  // 1. Resource Cleanup: Stop any existing instance to avoid NotReadableError
-  if (html5QrCode) {
-    try {
-      await html5QrCode.stop();
-    } catch (e) {
-      // Ignore errors if already stopped
-    }
+  byId("status").innerText = "📷 Initializing...";
+  scanLock = false;
+
+  // 1. Singleton Pattern: Ensure only one instance exists
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode("reader");
   }
 
-  byId("status").innerText = "📷 Scanning...";
-  scanLock = false;
-  html5QrCode = new Html5Qrcode("reader");
+  // 2. State Teardown
+  if (html5QrCode.isScanning) {
+    try {
+      await html5QrCode.stop();
+      // 3. Temporal Buffer: Wait for Hardware Release
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch (e) {
+      console.warn("Stop failed, likely already inactive.");
+    }
+  }
 
   const config = {
     fps: 20,
@@ -257,21 +263,29 @@ async function startScanner() {
     aspectRatio: 1.0
   };
 
+  // 4. Start Scan
   html5QrCode.start(
     { facingMode: "environment" },
     config,
     onScanSuccess
   )
   .then(() => {
+    byId("status").innerText = "📷 Scanning...";
     const track = html5QrCode.getRunningTrack();
     if (track) {
-      enableZoom(track);    // Link the slider
-      optimizeCamera();      // Apply focus/exposure
+      enableZoom(track);
+      optimizeCamera();
     }
   })
   .catch(err => {
-    byId("status").innerText = "❌ Camera Error: " + err.name;
-    console.error(err);
+    // 5. Robust Error Reporting
+    const errorMsg = err.name || err.message || err || "Unknown Error";
+    byId("status").innerText = "❌ " + errorMsg;
+    
+    if (errorMsg.includes("NotReadableError")) {
+      byId("status").innerText = "❌ Camera Busy: Close other apps";
+    }
+    console.error("Scanner Error:", err);
   });
 }
 function optimizeCamera() {

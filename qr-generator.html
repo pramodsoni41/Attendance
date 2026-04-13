@@ -1,184 +1,209 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>QR Generator (Admin)</title>
+<meta charset="UTF-8">
+<title>QR Generator (Admin)</title>
 
-  <!-- QR Library -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
-  <style>
-    body {
-      font-family: Arial;
-      margin: 0;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #f4f6f8;
-    }
+<style>
+body {
+  font-family: Arial;
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f4f6f8;
+}
 
-    .container {
-      text-align: center;
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-    }
+.container {
+  text-align: center;
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
 
-    canvas {
-      margin-top: 20px;
-    }
+canvas {
+  margin-top: 15px;
+  image-rendering: pixelated;
+}
 
-    #title {
-      color: #2563eb;
-      margin-bottom: 10px;
-      font-weight: bold;
-    }
-  </style>
+#title {
+  color: #2563eb;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+#zoomSlider {
+  width: 100%;
+  margin-top: 15px;
+}
+</style>
 </head>
 
 <body>
 
 <div class="container">
   <h2 id="title">Admin Login Required</h2>
-  <canvas id="qr" style="display:none;"></canvas>
+  <canvas id="qr"></canvas>
+  <input type="range" min="250" max="800" value="500" id="zoomSlider">
 </div>
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbw6NFN_7AVQJlKf5EP4UbMeXCXlW5Q9-kxnFKKbndNozdX9eclptEYRSm8m3Eowo6I/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxcGsVky1zkFEUg57FQyYy5_gY0CJyGCcD1ZgCjW2oLy38FU0th8TCv4lr7lLBSw7M/exec";
+const PORTAL_URL = "https://pramodsoni.in/Attendance/";
 
-// --- Engineering Constants ---
-let QR_VALIDITY_MS = 60000; 
-const LEAD_TIME_MS = 3000; // 🚩 Fetch new QR 12s BEFORE expiry to hide latency
+// Timing
+let QR_VALIDITY_MS = 60000;
+const LEAD_TIME_MS = 3000;
+
+// State
 let ADMIN_PASS = "";
-let qrTimeout = null;       // Switched to setTimeout for precision
+let qrTimeout = null;
 let countdownInterval = null;
 let lastQR = null;
 let timeOffset = 0;
 
 /* ================= JSONP ================= */
-function jsonpRequest(url, callbackName, onSuccess, onError) {
+function jsonp(url, cb, success, fail) {
   const script = document.createElement("script");
-  window[callbackName] = function(data) {
-    delete window[callbackName];
+
+  window[cb] = (data) => {
+    delete window[cb];
     script.remove();
-    onSuccess(data);
+    success(data);
   };
-  script.src = url + "&callback=" + callbackName;
-  script.onerror = function() {
-    delete window[callbackName];
+
+  script.onerror = () => {
+    delete window[cb];
     script.remove();
-    if (onError) onError();
+    if (fail) fail();
   };
+
+  script.src = url + "&callback=" + cb;
   document.body.appendChild(script);
 }
 
-/* ================= LOAD ADMIN ================= */
-function loadAdminPass() {
+/* ================= ADMIN LOGIN ================= */
+function init() {
   const cb = "admin_" + Date.now();
-  const url = `${API_URL}?type=get_admin_pass`;
-  jsonpRequest(url, cb, (data) => {
-    if (data.status === "success") {
-      ADMIN_PASS = data.pass;
-      const input = prompt("Enter Admin Password:");
-      if (input === ADMIN_PASS) {
-        document.getElementById("qr").style.display = "block";
-        fetchQR(); // Start the loop immediately
-      } else {
-        document.body.innerHTML = "<h2>Unauthorized</h2>";
-      }
-    }
-  });
-}
 
-/* ================= LOGIN ================= */
-function askPassword() {
+  jsonp(`${API_URL}?type=get_admin_pass`, cb, (data) => {
 
-  const input = prompt("Enter Admin Password:");
-
-  if (input === ADMIN_PASS) {
-
-    document.getElementById("qr").style.display = "block";
-    startQR();
-
-  } else {
-    alert("❌ Access Denied");
-    document.body.innerHTML = "<h2>Unauthorized</h2>";
-  }
-}
-
-
-/* ================= FETCH QR (FIXED ADMIN SIDE) ================= */
-function fetchQR() {
-  const cb = "qr_" + Date.now();
-  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
-
-  jsonpRequest(url, cb, function(data) {
     if (data.status !== "success") {
-      qrTimeout = setTimeout(fetchQR, 2000); // Retry quickly on failure
+      document.body.innerHTML = "Server Error";
       return;
     }
 
-    const payload = data.qr_payload; 
-    const PORTAL_URL = "https://pramodsoni.in/Attendance/";
+    ADMIN_PASS = data.pass;
+
+    const input = prompt("Enter Admin Password:");
+
+    if (input !== ADMIN_PASS) {
+      document.body.innerHTML = "<h2>Unauthorized</h2>";
+      return;
+    }
+
+    document.getElementById("title").innerText = "QR Active";
+    fetchQR();
+
+  });
+}
+
+/* ================= FETCH QR ================= */
+function fetchQR() {
+
+  const cb = "qr_" + Date.now();
+
+  jsonp(`${API_URL}?type=generate_qr&session_id=CE101`, cb, (data) => {
+
+    if (data.status !== "success") {
+      qrTimeout = setTimeout(fetchQR, 2000);
+      return;
+    }
+
+    const payload = data.qr_payload;
+
     const fullLink = `${PORTAL_URL}?p=${encodeURIComponent(payload)}`;
 
-    // Sync Timing
-    if (data.validity_sec) QR_VALIDITY_MS = data.validity_sec * 1000;
+    // Sync timing
+    QR_VALIDITY_MS = data.validity_sec * 1000;
     timeOffset = data.server_time - Date.now();
 
-    // Render New QR
-    const qrCanvas = document.getElementById("qr");
-    QRCode.toCanvas(qrCanvas, fullLink, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
+    renderQR(fullLink, payload);
 
-    // Update timestamp from payload (session|timestamp|token|sig)
     const parts = payload.split('|');
-    lastQR = { timestamp: parseInt(parts[1]) * 1000 };
 
-    // --- PREDICTIVE SCHEDULING ---
-    const now = Date.now() + timeOffset;
-    const expiry = lastQR.timestamp + QR_VALIDITY_MS;
-    
-    // Logic: Time to next = (Total Life - Elapsed Time) - Lead Time Buffer
-    const nextFetchDelay = Math.max(1000, (expiry - now) - LEAD_TIME_MS);
-    
-    if (qrTimeout) clearTimeout(qrTimeout);
-    qrTimeout = setTimeout(fetchQR, nextFetchDelay);
+    lastQR = {
+      timestamp: parseInt(parts[1]) * 1000,
+      raw: payload
+    };
 
-    // Restart UI Timer
-    if (countdownInterval) clearInterval(countdownInterval);
-    countdownInterval = setInterval(updateCountdown, 1000);
-    updateCountdown();
+    scheduleNext();
+    startCountdown();
 
   }, () => qrTimeout = setTimeout(fetchQR, 3000));
 }
 
-/* ================= COUNTDOWN ================= */
-function updateCountdown() {
-  if (!lastQR) return;
+/* ================= RENDER QR ================= */
+function renderQR(link, payload) {
+
+  const size = document.getElementById("zoomSlider").value;
+
+  QRCode.toCanvas(document.getElementById("qr"), link, {
+    width: parseInt(size),
+    margin: 1,
+    errorCorrectionLevel: 'H'
+  });
+
+}
+
+/* ================= SCHEDULING ================= */
+function scheduleNext() {
+
   const now = Date.now() + timeOffset;
   const expiry = lastQR.timestamp + QR_VALIDITY_MS;
-  let remaining = Math.max(0, Math.floor((expiry - now) / 1000));
-  document.getElementById("title").innerText = `QR Active | Time Left: ${remaining}s`;
+
+  const delay = Math.max(1000, (expiry - now) - LEAD_TIME_MS);
+
+  if (qrTimeout) clearTimeout(qrTimeout);
+  qrTimeout = setTimeout(fetchQR, delay);
 }
 
-/* ================= LOOP ================= */
-function startQR() {
+/* ================= COUNTDOWN ================= */
+function startCountdown() {
 
-  if (qrInterval) clearInterval(qrInterval);
   if (countdownInterval) clearInterval(countdownInterval);
 
-  fetchQR();
+  countdownInterval = setInterval(() => {
 
-  qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
+    if (!lastQR) return;
 
-  countdownInterval = setInterval(updateCountdown, 1000);
+    const now = Date.now() + timeOffset;
+    const expiry = lastQR.timestamp + QR_VALIDITY_MS;
+
+    let remaining = Math.max(0, Math.floor((expiry - now) / 1000));
+
+    document.getElementById("title").innerText =
+      `QR Active | ${remaining}s`;
+
+  }, 1000);
 }
 
+/* ================= ZOOM ================= */
+document.getElementById("zoomSlider").oninput = function() {
+  if (!lastQR) return;
+
+  const link = `${PORTAL_URL}?p=${encodeURIComponent(lastQR.raw)}`;
+  renderQR(link, lastQR.raw);
+};
+
 /* ================= INIT ================= */
-document.addEventListener("DOMContentLoaded", loadAdminPass);
+document.addEventListener("DOMContentLoaded", init);
+
 </script>
 
 </body>

@@ -50,8 +50,8 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbx9Gf2Ghf7DMnnz7oh6ZcayAEPqV3Di-dguYQ0dyWtvkacbXtNci4wN25jDtDXsf5w/exec";
 
 
-const QR_VALIDITY_MS = 15000;
-const REFRESH_BEFORE_MS = 14000;
+let QR_VALIDITY_MS = 15000;
+let REFRESH_BEFORE_MS = 14000;
 function loadConfig() {
 
   const cb = "cfg_" + Date.now();
@@ -207,7 +207,7 @@ function startQR() {
 }
 
 /* ================= INIT ================= */
-document.addEventListener("DOMContentLoaded", loadAdminPass);
+document.addEventListener("DOMContentLoaded", loadConfig);
 
 </script>
 

@@ -1,12 +1,28 @@
 <script>
 
+/* ================= CONFIG ================= */
 const API_URL = "https://script.google.com/macros/s/AKfycbxcGsVky1zkFEUg57FQyYy5_gY0CJyGCcD1ZgCjW2oLy38FU0th8TCv4lr7lLBSw7M/exec";
-const byId = (id) => document.getElementById(id);
 
-/* ================= PROCESS QR ================= */
-function processPayload(raw) {
+/* ================= SAFE DOM ================= */
+function byId(id) {
+  const el = document.getElementById(id);
+  if (!el) console.error("Missing element:", id);
+  return el;
+}
+
+/* ================= ERROR DEBUG ================= */
+window.onerror = function(err) {
+  document.body.innerHTML = "❌ JS ERROR: " + err;
+};
+
+/* ================= PARSE QR ================= */
+function parseQR(raw) {
   if (!raw) return null;
+
   const parts = raw.split('|');
+
+  if (parts.length < 4) return null;
+
   return {
     session_id: parts[0],
     timestamp: parts[1],
@@ -16,106 +32,126 @@ function processPayload(raw) {
 }
 
 /* ================= JSONP ================= */
-function jsonpRequest(url, cb, onSuccess) {
+function callAPI(url, cb, success) {
+
   const script = document.createElement("script");
 
-  window[cb] = (data) => {
-    script.remove();
+  window[cb] = function(res) {
     delete window[cb];
-    onSuccess(data);
+    script.remove();
+    success(res);
+  };
+
+  script.onerror = function() {
+    byId("status").innerText = "❌ Network error";
   };
 
   script.src = url + "&callback=" + cb;
   document.body.appendChild(script);
 }
 
-/* ================= AUTO ATTENDANCE ================= */
-function autoSubmit() {
+/* ================= AUTO ATTEND ================= */
+function autoAttend() {
 
   const payload = localStorage.getItem("pending_qr");
-  const sTime = localStorage.getItem("scan_time");
+  const scanTime = localStorage.getItem("scan_time");
   const deviceId = localStorage.getItem("device_id");
 
-  const statusDiv = byId("status");
-  const formSection = byId("formSection");
+  const status = byId("status");
+  const form = byId("formSection");
 
-  const qrData = processPayload(payload);
+  if (!payload) {
+    status.innerText = "⚠️ Scan QR first";
+    return;
+  }
 
-  statusDiv.innerText = "🔄 Checking device...";
+  const qr = parseQR(payload);
+
+  if (!qr) {
+    status.innerText = "❌ Invalid QR";
+    return;
+  }
+
+  status.innerText = "🔄 Checking device...";
 
   const cb = "auto_" + Date.now();
 
-  const url = `${API_URL}?type=mark_attendance` +
-              `&student_id=` + "" +   // EMPTY
-              `&session_id=${qrData.session_id}` +
-              `&token=${qrData.token}` +
-              `&timestamp=${qrData.timestamp}` +
-              `&scan_time=${sTime}` +
-              `&signature=${qrData.signature}` +
-              `&device_id=${deviceId}`;
+  const url = `${API_URL}?type=mark_attendance`
+    + `&student_id=`
+    + `&session_id=${qr.session_id}`
+    + `&token=${qr.token}`
+    + `&timestamp=${qr.timestamp}`
+    + `&scan_time=${scanTime}`
+    + `&signature=${qr.signature}`
+    + `&device_id=${deviceId}`;
 
-  jsonpRequest(url, cb, (res) => {
+  callAPI(url, cb, function(res) {
 
     if (res.status === "success") {
-      statusDiv.innerHTML = `✅ Attendance marked for <b>${res.name}</b>`;
-      formSection.classList.add("hidden");
+      status.innerHTML = `✅ Attendance marked for <b>${res.name}</b>`;
+      form.classList.add("hidden");
       localStorage.removeItem("pending_qr");
     }
 
     else if (res.status === "register_required") {
-      formSection.classList.remove("hidden");
-      statusDiv.innerText = "Enter Roll No (First Time Only)";
+      form.classList.remove("hidden");
+      status.innerText = "Enter Roll No (First Time Only)";
     }
 
     else {
-      statusDiv.innerHTML = "❌ " + res.message;
+      status.innerHTML = "❌ " + (res.message || res.status);
     }
   });
 }
 
-/* ================= MANUAL SUBMIT ================= */
-function handleSubmission() {
+/* ================= REGISTER ================= */
+function submitRoll() {
 
-  const rollNo = byId("rollNo").value.trim();
+  const roll = byId("rollNo").value.trim();
   const payload = localStorage.getItem("pending_qr");
-  const sTime = localStorage.getItem("scan_time");
+  const scanTime = localStorage.getItem("scan_time");
   const deviceId = localStorage.getItem("device_id");
 
-  const statusDiv = byId("status");
+  const status = byId("status");
   const btn = byId("submitBtn");
 
-  if (!rollNo) {
+  if (!roll) {
     alert("Enter Roll No");
     return;
   }
 
-  const qrData = processPayload(payload);
+  const qr = parseQR(payload);
+
+  if (!qr) {
+    status.innerText = "❌ Invalid QR";
+    return;
+  }
 
   btn.disabled = true;
-  statusDiv.innerText = "⏳ Registering device...";
+  status.innerText = "⏳ Registering...";
 
   const cb = "reg_" + Date.now();
 
-  const url = `${API_URL}?type=mark_attendance` +
-              `&student_id=${encodeURIComponent(rollNo)}` +
-              `&session_id=${qrData.session_id}` +
-              `&token=${qrData.token}` +
-              `&timestamp=${qrData.timestamp}` +
-              `&scan_time=${sTime}` +
-              `&signature=${qrData.signature}` +
-              `&device_id=${deviceId}`;
+  const url = `${API_URL}?type=mark_attendance`
+    + `&student_id=${encodeURIComponent(roll)}`
+    + `&session_id=${qr.session_id}`
+    + `&token=${qr.token}`
+    + `&timestamp=${qr.timestamp}`
+    + `&scan_time=${scanTime}`
+    + `&signature=${qr.signature}`
+    + `&device_id=${deviceId}`;
 
-  jsonpRequest(url, cb, (res) => {
+  callAPI(url, cb, function(res) {
 
     if (res.status === "success") {
-      statusDiv.innerHTML = `✅ Attendance marked for <b>${res.name}</b>`;
+      status.innerHTML = `✅ Attendance marked for <b>${res.name}</b>`;
       byId("formSection").classList.add("hidden");
       localStorage.removeItem("pending_qr");
     }
 
     else {
       btn.disabled = false;
-      statusDiv.innerHTML = "❌ " + res.message;
+      status.innerHTML = "❌ " + (res.message || res.status);
     }
   });
 }
@@ -123,36 +159,36 @@ function handleSubmission() {
 /* ================= INIT ================= */
 window.onload = function() {
 
-  const params = new URLSearchParams(window.location.search);
-  const payload = params.get("p");
+  const status = byId("status");
+  const form = byId("formSection");
 
-  const statusDiv = byId("status");
-  const formSection = byId("formSection");
-
-  // Generate device id once
+  // Create device ID once
   if (!localStorage.getItem("device_id")) {
     localStorage.setItem("device_id", "DEV-" + Math.random().toString(36).substring(2,10));
   }
 
-  // Save QR scan
+  // Get QR payload from URL
+  const params = new URLSearchParams(window.location.search);
+  const payload = params.get("p");
+
   if (payload) {
     localStorage.setItem("pending_qr", payload);
     localStorage.setItem("scan_time", Math.floor(Date.now() / 1000));
   }
 
-  const currentPayload = localStorage.getItem("pending_qr");
+  const saved = localStorage.getItem("pending_qr");
 
-  if (!currentPayload) {
-    formSection.classList.add("hidden");
-    statusDiv.innerHTML = "⚠️ Scan QR first";
+  if (!saved) {
+    form.classList.add("hidden");
+    status.innerText = "⚠️ Please scan QR";
     return;
   }
 
   // Hide form initially
-  formSection.classList.add("hidden");
+  form.classList.add("hidden");
 
-  // Auto check device
-  autoSubmit();
+  // Start auto flow
+  autoAttend();
 };
 
 </script>

@@ -49,54 +49,47 @@
 
 const API_URL = "https://script.google.com/macros/s/AKfycbx2vwSluUlRaYy4OFcj2fOGgCTMvJvo7jT-jGkeXRNOv9VfQd_FFKUA6xiimTUGOQ/exec";
 
-let QR_VALIDITY_MS = 60000; // default fallback
-const TOKEN_CACHE_SEC = 60;
-let  REFRESH_BEFORE_MS = 55000;  // refresh 5 sec before expiry
+// --- Engineering Constants ---
+let QR_VALIDITY_MS = 60000; 
+const LEAD_TIME_MS = 3000; // 🚩 Fetch new QR 12s BEFORE expiry to hide latency
 let ADMIN_PASS = "";
-let qrInterval = null;
+let qrTimeout = null;       // Switched to setTimeout for precision
 let countdownInterval = null;
 let lastQR = null;
 let timeOffset = 0;
 
 /* ================= JSONP ================= */
 function jsonpRequest(url, callbackName, onSuccess, onError) {
-
   const script = document.createElement("script");
-
   window[callbackName] = function(data) {
     delete window[callbackName];
     script.remove();
     onSuccess(data);
   };
-
   script.src = url + "&callback=" + callbackName;
-
   script.onerror = function() {
     delete window[callbackName];
     script.remove();
     if (onError) onError();
   };
-
   document.body.appendChild(script);
 }
 
 /* ================= LOAD ADMIN ================= */
 function loadAdminPass() {
-
   const cb = "admin_" + Date.now();
   const url = `${API_URL}?type=get_admin_pass`;
-
-  jsonpRequest(url, cb, function(data) {
-
+  jsonpRequest(url, cb, (data) => {
     if (data.status === "success") {
       ADMIN_PASS = data.pass;
-      askPassword();
-    } else {
-      alert("❌ Cannot load admin config");
+      const input = prompt("Enter Admin Password:");
+      if (input === ADMIN_PASS) {
+        document.getElementById("qr").style.display = "block";
+        fetchQR(); // Start the loop immediately
+      } else {
+        document.body.innerHTML = "<h2>Unauthorized</h2>";
+      }
     }
-
-  }, function() {
-    alert("❌ Server error");
   });
 }
 
@@ -123,77 +116,52 @@ function fetchQR() {
   const url = `${API_URL}?type=generate_qr&session_id=CE101`;
 
   jsonpRequest(url, cb, function(data) {
-
     if (data.status !== "success") {
-      console.warn("QR fetch failed");
+      qrTimeout = setTimeout(fetchQR, 2000); // Retry quickly on failure
       return;
     }
 
-    // ✅ FIX 1: Use qr_payload instead of data.qr
-    // The backend returns { status: "success", qr_payload: "..." }
     const payload = data.qr_payload; 
-    
-    // ✅ FIX 2: Define your portal URL
     const PORTAL_URL = "https://pramodsoni.in/Attendance/";
-    
-    // Construct the final link for the QR
     const fullLink = `${PORTAL_URL}?p=${encodeURIComponent(payload)}`;
 
-    /* ✅ DYNAMIC VALIDITY */
-    if (data.validity_sec) {
-      QR_VALIDITY_MS = data.validity_sec * 1000;
-      REFRESH_BEFORE_MS = Math.max(5000, QR_VALIDITY_MS - 5000);
-    }
-
-    /* ✅ TIME SYNC */
+    // Sync Timing
+    if (data.validity_sec) QR_VALIDITY_MS = data.validity_sec * 1000;
     timeOffset = data.server_time - Date.now();
 
+    // Render New QR
     const qrCanvas = document.getElementById("qr");
+    QRCode.toCanvas(qrCanvas, fullLink, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
 
-    // Generate QR with the URL link
-    QRCode.toCanvas(
-      qrCanvas,
-      fullLink,
-      { width: 400, margin: 2, errorCorrectionLevel: 'M' }
-    );
-
-    // Update internal reference for the countdown
-    // We split the payload to get the timestamp (second part of the string)
+    // Update timestamp from payload (session|timestamp|token|sig)
     const parts = payload.split('|');
-    lastQR = {
-      timestamp: parseInt(parts[1]) * 1000 // Convert seconds to ms
-    };
+    lastQR = { timestamp: parseInt(parts[1]) * 1000 };
 
-    /* RESET TIMERS */
-    clearInterval(countdownInterval);
+    // --- PREDICTIVE SCHEDULING ---
+    const now = Date.now() + timeOffset;
+    const expiry = lastQR.timestamp + QR_VALIDITY_MS;
+    
+    // Logic: Time to next = (Total Life - Elapsed Time) - Lead Time Buffer
+    const nextFetchDelay = Math.max(1000, (expiry - now) - LEAD_TIME_MS);
+    
+    if (qrTimeout) clearTimeout(qrTimeout);
+    qrTimeout = setTimeout(fetchQR, nextFetchDelay);
+
+    // Restart UI Timer
+    if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(updateCountdown, 1000);
-
-    clearInterval(qrInterval);
-    qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
-
     updateCountdown();
 
-  }, function() {
-    console.warn("QR fetch error");
-  });
+  }, () => qrTimeout = setTimeout(fetchQR, 3000));
 }
 
 /* ================= COUNTDOWN ================= */
 function updateCountdown() {
   if (!lastQR) return;
-
   const now = Date.now() + timeOffset;
   const expiry = lastQR.timestamp + QR_VALIDITY_MS;
-  
-  // Calculate remaining time
-  let remaining = Math.floor((expiry - now) / 1000);
-
-  // ✅ FIX: Clamp the value to 0 and remove the "Refreshing" text override
-  // This prevents the title from changing to "⛔ Refreshing..." and back.
-  if (remaining < 0) remaining = 0;
-
-  document.getElementById("title").innerText =
-    "QR Active | Time Left: " + remaining + "s";
+  let remaining = Math.max(0, Math.floor((expiry - now) / 1000));
+  document.getElementById("title").innerText = `QR Active | Time Left: ${remaining}s`;
 }
 
 /* ================= LOOP ================= */
@@ -211,7 +179,6 @@ function startQR() {
 
 /* ================= INIT ================= */
 document.addEventListener("DOMContentLoaded", loadAdminPass);
-
 </script>
 
 </body>

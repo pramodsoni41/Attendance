@@ -117,37 +117,40 @@ function askPassword() {
 }
 
 /* ================= FETCH QR ================= */
+Yes, that is exactly where you define the destination. Since your portal is hosted at https://pramodsoni.in/Attendance/, you should use that specific URL so the student's phone knows where to go.
+
+In your Admin QR Generator (the page you use to show the QR code to the class), update the fetchQR function like this:
+
+JavaScript
+/* ================= FETCH QR (IN ADMIN HTML) ================= */
 function fetchQR() {
   const cb = "qr_" + Date.now();
-  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
+  const url = `${API_URL}?type=generate_qr&session_id=CE101`; // Change session_id as needed
 
   jsonpRequest(url, cb, function(data) {
     if (data.status !== "success") return;
 
-    lastQR = data.qr; // This should contain a unique token from your script
-
-    // ✅ NEW: Define your User-Facing Login Page URL
-    const USER_LOGIN_PAGE = "https://your-website.com/attendance-login.html";
+    // ✅ UPDATE THIS LINE with your actual URL
+    const USER_LOGIN_PAGE = "https://pramodsoni.in/Attendance/";
     
-    // ✅ NEW: Encode as a URL instead of raw JSON
-    // We pass the token (and optionally session_id) in the URL
-    const qrDataString = `${USER_LOGIN_PAGE}?token=${lastQR.token}&session=CE101`;
+    // Combine the URL with the encrypted payload
+    const qrLink = `${USER_LOGIN_PAGE}?p=${encodeURIComponent(data.qr_payload)}`;
 
     const qrCanvas = document.getElementById("qr");
 
-    // Generate QR with the URL string
+    // Generate the QR using the full Link
     QRCode.toCanvas(
       qrCanvas,
-      qrDataString, 
-      { width: 400, margin: 2, errorCorrectionLevel: 'H' }
+      qrLink, 
+      { width: 400, margin: 2, errorCorrectionLevel: 'M' }
     );
 
-    /* Timer logic remains the same */
+    /* The rest of your timer/countdown logic remains the same */
     if (data.validity_sec) {
       QR_VALIDITY_MS = data.validity_sec * 1000;
       REFRESH_BEFORE_MS = Math.max(5000, QR_VALIDITY_MS - 5000);
     }
-    // ... rest of your timing logic
+    // ...
   });
 }
 

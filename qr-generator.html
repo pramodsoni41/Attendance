@@ -52,6 +52,30 @@ const API_URL = "https://script.google.com/macros/s/AKfycbx9Gf2Ghf7DMnnz7oh6Zcay
 
 const QR_VALIDITY_MS = 15000;
 const REFRESH_BEFORE_MS = 14000;
+function loadConfig() {
+
+  const cb = "cfg_" + Date.now();
+  const url = `${API_URL}?type=get_config`;
+
+  jsonpRequest(url, cb, function(data) {
+
+    if (data.status === "success") {
+
+      const sec = Number(data.config.qr_expiry || 15);
+
+      QR_VALIDITY_MS = sec * 1000;
+
+      // refresh slightly before expiry
+      REFRESH_BEFORE_MS = Math.max(1000, QR_VALIDITY_MS - 1000);
+
+    }
+
+    loadAdminPass(); // continue after config
+
+  }, function() {
+    alert("❌ Config load failed");
+  });
+}
 let ADMIN_PASS = "";
 let qrInterval = null;
 let countdownInterval = null;

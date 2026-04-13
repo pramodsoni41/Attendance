@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Attendance Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body{
+  font-family: Arial, sans-serif;
+  background:#f4f6f8;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  margin:0;
+}
+.container{
+  background:#fff;
+  padding:25px;
+  border-radius:12px;
+  width:360px;
+  box-shadow:0 4px 14px rgba(0,0,0,0.12);
+  text-align:center;
+}
+input{
+  width:100%;
+  padding:10px;
+  margin:8px 0;
+  border:1px solid #ccc;
+  border-radius:6px;
+}
+button{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border:none;
+  border-radius:6px;
+  background:#007bff;
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
+}
+button:hover{background:#0056b3;}
+.logout{background:#dc3545;}
+.logout:hover{background:#a71d2a;}
+.secondary{background:#6c757d;}
+.hidden{display:none;}
+
+#reader{width:280px;margin:auto;}
+#status{margin-top:10px;font-weight:bold;}
+
+#zoomSlider{
+  width:100%;
+  margin-top:12px;
+}
+.zoom-label{
+  font-size:12px;
+  color:#666;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<!-- LOGIN -->
+<div id="loginSection">
+  <h2>Student Login</h2>
+  <input type="text" id="studentId" placeholder="Enter Student ID">
+  <input type="password" id="password" placeholder="Enter Password">
+  <button id="loginBtn" onclick="login()">Login</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+  <h2>Welcome</h2>
+  <p id="userInfo"></p>
+  <button onclick="openScanner()">📷 Mark Attendance</button>
+  <button class="logout" onclick="logout()">Logout</button>
+</div>
+
+<!-- SCANNER -->
+<div id="scannerSection" class="hidden">
+  <h3>Scan QR</h3>
+  <div id="reader"></div>
+
+  <!-- ZOOM CONTROL -->
+  <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
+  <div class="zoom-label">Zoom</div>
+
+  <div id="status"></div>
+  <button class="secondary" onclick="closeScanner()">⬅ Back</button>
+</div>
+
+</div>
+
+<script>
+
+const API_URL = "https://script.google.com/macros/s/AKfycbwncsDfl2Jn1QJJdn42r5CcFn4KIDiPPcFzBWT-bg5F2UsFzhkVUP5pbvzrqbKYnyk/exec";
+
+let html5QrCode = null;
+let scanLock = false;
+
+/* ================= HELPERS ================= */
+function byId(id){ return document.getElementById(id); }
+
+/* ================= JSONP ================= */
+function jsonpRequest(url, callbackName, onSuccess, onError){
+
+  window[callbackName] = function(data){
+    delete window[callbackName];
+    onSuccess(data);
+  };
+
+  const script = document.createElement("script");
+  script.src = url + "&callback=" + callbackName;
+
+  script.onerror = function(){
+    delete window[callbackName];
+    if (onError) onError();
+  };
+
+  document.body.appendChild(script);
+}
+
+/* ================= DEVICE ID ================= */
+function getDeviceId() {
+
+  const EXPIRY_MINUTES = 30;
+  const now = Date.now();
+
+  let stored = localStorage.getItem("device_data");
+
+  if (stored) {
+    try {
+      stored = JSON.parse(stored);
+      const age = (now - stored.timestamp) / (1000 * 60);
+      if (age < EXPIRY_MINUTES) return stored.id;
+    } catch(e){}
+  }
+
+  const newId = "DEV-" + Math.random().toString(36).substring(2) + now;
+
+  localStorage.setItem("device_data", JSON.stringify({
+    id: newId,
+    timestamp: now
+  }));
+
+  return newId;
+}
+
+/* ================= LOGIN ================= */
+function login(){
+
+  const id = byId("studentId").value.trim();
+  const pass = byId("password").value.trim();
+  const btn = byId("loginBtn");
+
+  if (!id || !pass){
+    alert("Enter ID and Password");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = "Logging in...";
+
+  const cb = "login_" + Date.now();
+
+  const url = API_URL + "?type=login&id=" + id + "&pass=" + pass;
+
+  jsonpRequest(url, cb, function(data){
+
+    btn.disabled = false;
+    btn.innerText = "Login";
+
+    if (data.status === "success"){
+      localStorage.setItem("student", JSON.stringify(data.student));
+      showDashboard();
+    } else {
+      alert("Invalid ID or Password");
+    }
+
+  }, function(){
+    btn.disabled = false;
+    btn.innerText = "Login";
+    alert("Network error");
+  });
+}
+
+/* ================= DASHBOARD ================= */
+function showDashboard(){
+
+  const student = JSON.parse(localStorage.getItem("student"));
+  if (!student) return;
+
+  byId("loginSection").classList.add("hidden");
+  byId("dashboard").classList.remove("hidden");
+
+  byId("userInfo").innerText = student.name + " (" + student.id + ")";
+}
+
+function logout(){
+  localStorage.removeItem("student");
+  location.reload();
+}
+
+/* ================= SCANNER ================= */
+function openScanner(){
+  byId("dashboard").classList.add("hidden");
+  byId("scannerSection").classList.remove("hidden");
+  startScanner();
+}
+
+function closeScanner(){
+
+  if (html5QrCode){
+    html5QrCode.stop().then(() => {
+      byId("scannerSection").classList.add("hidden");
+      byId("dashboard").classList.remove("hidden");
+    });
+  }
+}
+
+function startScanner(){
+byId("status").innerText = "📷 Scanning...";
+  scanLock = false;
+  html5QrCode = new Html5Qrcode("reader");
+
+
+html5QrCode.start(
+  { facingMode: "environment" },
+  {
+    fps: 20,
+    qrbox: { width: 220, height: 220 },
+    aspectRatio: 1.0
+  },
+  onScanSuccess
+).then(() => {
+  enableZoom();
+  optimizeCamera();
+});
+
+
+}
+function optimizeCamera(){
+
+  const track = html5QrCode.getRunningTrack();
+  if (!track) return;
+
+  try{
+    track.applyConstraints({
+      advanced: [
+        { focusMode: "continuous" },  // autofocus
+        { exposureMode: "continuous" },
+        { whiteBalanceMode: "continuous" },
+        { zoom: 2 } // default zoom for small QR
+      ]
+    });
+  }catch(e){}
+}
+/* ================= ZOOM ================= */
+function enableZoom(){
+
+  const slider = byId("zoomSlider");
+  const track = html5QrCode.getRunningTrack();
+
+  if (!track) return;
+
+  const cap = track.getCapabilities();
+
+  if (!cap.zoom){
+    slider.style.display = "none";
+    return;
+  }
+
+  slider.min = cap.zoom.min;
+  slider.max = cap.zoom.max;
+  slider.step = cap.zoom.step || 0.1;
+
+  slider.oninput = function(){
+    track.applyConstraints({
+      advanced: [{ zoom: parseFloat(this.value) }]
+    });
+  };
+}
+
+/* ================= ATTENDANCE ================= */
+function onScanSuccess(decodedText){
+
+  if (scanLock) return;
+  scanLock = true;
+
+  setTimeout(() => scanLock = false, 1500);
+  let qrData;
+
+  try{
+    qrData = JSON.parse(decodedText);
+  }catch{
+    byId("status").innerText = "❌ Invalid QR";
+    scanLock = false;
+    return;
+  }
+
+  const student = JSON.parse(localStorage.getItem("student"));
+  const device_id = getDeviceId();
+
+  byId("status").innerText = "Submitting...";
+
+  const cb = "att_" + Date.now();
+
+  const url =
+    API_URL +
+    "?type=mark_attendance" +
+    "&student_id=" + student.id +
+    "&session_id=" + qrData.session_id +
+    "&token=" + qrData.token +
+    "&timestamp=" + qrData.timestamp +
+    "&signature=" + qrData.signature +
+    "&device_id=" + device_id;
+
+  jsonpRequest(url, cb, function(res){
+
+    if (res.status === "success"){
+      byId("status").innerText = "✅ Attendance Marked";
+    }
+    else if (res.status === "device_used"){
+      byId("status").innerText = "🚫 Device already used";
+      scanLock = false;
+      return;
+    }
+    else if (res.status === "already_marked"){
+      byId("status").innerText = "⚠ Already marked";
+    }
+    else if (res.status === "expired"){
+      byId("status").innerText = "⏱ QR expired";
+      scanLock = false;
+      return;
+    }
+    else{
+      byId("status").innerText = "❌ Failed";
+      scanLock = false;
+      return;
+    }
+
+    setTimeout(() => closeScanner(), 1200);
+
+  }, function(){
+    byId("status").innerText = "❌ Network error";
+    scanLock = false;
+  });
+}
+
+/* ================= AUTO LOGIN ================= */
+window.onload = showDashboard;
+
+</script>
+
+</body>
+</html>

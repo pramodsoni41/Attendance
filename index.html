@@ -225,66 +225,75 @@ function closeScanner(){
   }
 }
 
-function startScanner(){
-byId("status").innerText = "📷 Scanning...";
+function startScanner() {
+  byId("status").innerText = "📷 Scanning...";
   scanLock = false;
   html5QrCode = new Html5Qrcode("reader");
 
-
-html5QrCode.start(
-  { facingMode: "environment" },
-  {
+  const config = {
     fps: 20,
     qrbox: { width: 220, height: 220 },
     aspectRatio: 1.0
-  },
-  onScanSuccess
-).then(() => {
-  enableZoom();
-  optimizeCamera();
-});
+  };
 
-
+  html5QrCode.start(
+    { facingMode: "environment" },
+    config,
+    onScanSuccess
+  )
+  .then(() => {
+    // Crucial: Wait for the track to be active before accessing capabilities
+    const track = html5QrCode.getRunningTrack();
+    if (track) {
+      enableZoom(track);
+    }
+  })
+  .catch(err => {
+    byId("status").innerText = "❌ Camera Error";
+    console.error(err);
+  });
 }
-function optimizeCamera(){
-
+function optimizeCamera() {
   const track = html5QrCode.getRunningTrack();
   if (!track) return;
 
-  try{
-    track.applyConstraints({
-      advanced: [
-        { focusMode: "continuous" },  // autofocus
-        { exposureMode: "continuous" },
-        { whiteBalanceMode: "continuous" },
-        { zoom: 2 } // default zoom for small QR
-      ]
-    });
-  }catch(e){}
+  const capabilities = track.getCapabilities();
+  const constraints = { advanced: [] };
+
+  if (capabilities.focusMode) constraints.advanced.push({ focusMode: "continuous" });
+  if (capabilities.exposureMode) constraints.advanced.push({ exposureMode: "continuous" });
+
+  track.applyConstraints(constraints).catch(() => {});
 }
 /* ================= ZOOM ================= */
-function enableZoom(){
-
+function enableZoom(track) {
   const slider = byId("zoomSlider");
-  const track = html5QrCode.getRunningTrack();
+  const capabilities = track.getCapabilities();
 
-  if (!track) return;
-
-  const cap = track.getCapabilities();
-
-  if (!cap.zoom){
-    slider.style.display = "none";
+  // Check if zoom is supported by the hardware/browser
+  if (!capabilities.zoom) {
+    console.warn("Zoom not supported by this device.");
+    slider.parentElement.style.opacity = "0.3"; 
+    slider.disabled = true;
     return;
   }
 
-  slider.min = cap.zoom.min;
-  slider.max = cap.zoom.max;
-  slider.step = cap.zoom.step || 0.1;
+  // Map hardware limits to the UI slider
+  slider.min = capabilities.zoom.min;
+  slider.max = capabilities.zoom.max;
+  slider.step = capabilities.zoom.step || 0.1;
+  
+  // Set initial value to minimum to avoid "out of range" errors
+  slider.value = capabilities.zoom.min;
 
-  slider.oninput = function(){
-    track.applyConstraints({
-      advanced: [{ zoom: parseFloat(this.value) }]
-    });
+  slider.oninput = async function() {
+    try {
+      await track.applyConstraints({
+        advanced: [{ zoom: parseFloat(this.value) }]
+      });
+    } catch (e) {
+      console.error("Failed to apply zoom:", e);
+    }
   };
 }
 

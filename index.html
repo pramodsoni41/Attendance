@@ -269,6 +269,33 @@ function closeScanner(){
     });
   }
 }
+function startAutoZoom(){
+
+  setInterval(async () => {
+    try {
+      const track = html5QrCode.getRunningTrack();
+      const cap = track.getCapabilities();
+
+      if (cap.zoom) {
+        await track.applyConstraints({
+          advanced: [{ zoom: cap.zoom.max }]
+        });
+      }
+    } catch(e){}
+  }, 1200);
+}
+function enableAutoFocus(){
+  try {
+    const track = html5QrCode.getRunningTrack();
+    const cap = track.getCapabilities();
+
+    if (cap.focusMode) {
+      track.applyConstraints({
+        advanced: [{ focusMode: "continuous" }]
+      });
+    }
+  } catch(e){}
+}
 
 function startScanner(){
 
@@ -276,37 +303,43 @@ function startScanner(){
   html5QrCode = new Html5Qrcode("reader");
 
   Html5Qrcode.getCameras().then(devices => {
-    if (devices.length){
-
-      html5QrCode.start(
-        { facingMode: "environment" },
-        {
-          fps: 20,  // 🔥 faster scanning
-
-          // 🔥 FULL FRAME SCAN (MOST IMPORTANT)
-          qrbox: null,
-
-          // 🔥 HIGH RESOLUTION VIDEO
-          videoConstraints: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            facingMode: "environment"
-          },
-
-          aspectRatio: 1.0,
-
-          // 🔥 BEST DECODER AVAILABLE
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          }
-        },
-        onScanSuccess
-      );
-
-      // 🔥 AUTO ZOOM (CRITICAL FOR SMALL QR)
-      setTimeout(enableMaxZoom, 1200);
-
+    if (!devices.length) {
+      byId("status").innerText = "❌ No camera found";
+      return;
     }
+
+    html5QrCode.start(
+      { facingMode: "environment" },
+      {
+        fps: 25,   // faster scanning
+
+        // 🔥 FULL FRAME SCAN (detect small QR anywhere)
+        qrbox: null,
+
+        // 🔥 HIGH RESOLUTION
+        videoConstraints: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          facingMode: "environment"
+        },
+
+        aspectRatio: 1.0,
+
+        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
+
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
+      },
+      onScanSuccess
+    ).then(() => {
+
+      // 🔥 Start continuous improvements
+      startAutoZoom();
+      enableAutoFocus();
+
+    });
+
   });
 }
 

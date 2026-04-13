@@ -49,15 +49,7 @@
 
 const API_URL = "https://script.google.com/macros/s/AKfycbxlwNU2c0BK_VvRGzylKf4SPydHBOobwDGeLmuYCro9e6IwucxzDb-ZggzxRGMAMm8/exec";
 
-if (type === "get_config") {
-  return jsonp(callback, {
-    status: "success",
-    config: {
-      qr_expiry: getConfigValue("qr_expiry"),
-      qr_refresh: getConfigValue("qr_refresh")
-    }
-  });
-}
+
 
 let ADMIN_PASS = "";
 let qrInterval = null;

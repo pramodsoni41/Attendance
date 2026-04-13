@@ -246,7 +246,20 @@ function openScanner(){
   byId("scannerSection").classList.remove("hidden");
   startScanner();
 }
+async function enableMaxZoom() {
+  try {
+    const track = html5QrCode.getRunningTrack();
+    const capabilities = track.getCapabilities();
 
+    if (capabilities.zoom) {
+      await track.applyConstraints({
+        advanced: [{ zoom: capabilities.zoom.max }]
+      });
+    }
+  } catch (e) {
+    console.log("Zoom not supported");
+  }
+}
 function closeScanner(){
 
   if (html5QrCode){

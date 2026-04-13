@@ -123,34 +123,64 @@ In your Admin QR Generator (the page you use to show the QR code to the class), 
 
 JavaScript
 /* ================= FETCH QR (IN ADMIN HTML) ================= */
+/* ================= FETCH QR (FIXED ADMIN SIDE) ================= */
 function fetchQR() {
   const cb = "qr_" + Date.now();
-  const url = `${API_URL}?type=generate_qr&session_id=CE101`; // Change session_id as needed
+  const url = `${API_URL}?type=generate_qr&session_id=CE101`;
 
   jsonpRequest(url, cb, function(data) {
-    if (data.status !== "success") return;
 
-    // ✅ UPDATE THIS LINE with your actual URL
-    const USER_LOGIN_PAGE = "https://pramodsoni.in/Attendance/";
+    if (data.status !== "success") {
+      console.warn("QR fetch failed");
+      return;
+    }
+
+    // ✅ FIX 1: Use qr_payload instead of data.qr
+    // The backend returns { status: "success", qr_payload: "..." }
+    const payload = data.qr_payload; 
     
-    // Combine the URL with the encrypted payload
-    const qrLink = `${USER_LOGIN_PAGE}?p=${encodeURIComponent(data.qr_payload)}`;
+    // ✅ FIX 2: Define your portal URL
+    const PORTAL_URL = "https://pramodsoni.in/Attendance/";
+    
+    // Construct the final link for the QR
+    const fullLink = `${PORTAL_URL}?p=${encodeURIComponent(payload)}`;
 
-    const qrCanvas = document.getElementById("qr");
-
-    // Generate the QR using the full Link
-    QRCode.toCanvas(
-      qrCanvas,
-      qrLink, 
-      { width: 400, margin: 2, errorCorrectionLevel: 'M' }
-    );
-
-    /* The rest of your timer/countdown logic remains the same */
+    /* ✅ DYNAMIC VALIDITY */
     if (data.validity_sec) {
       QR_VALIDITY_MS = data.validity_sec * 1000;
       REFRESH_BEFORE_MS = Math.max(5000, QR_VALIDITY_MS - 5000);
     }
-    // ...
+
+    /* ✅ TIME SYNC */
+    timeOffset = data.server_time - Date.now();
+
+    const qrCanvas = document.getElementById("qr");
+
+    // Generate QR with the URL link
+    QRCode.toCanvas(
+      qrCanvas,
+      fullLink,
+      { width: 400, margin: 2, errorCorrectionLevel: 'M' }
+    );
+
+    // Update internal reference for the countdown
+    // We split the payload to get the timestamp (second part of the string)
+    const parts = payload.split('|');
+    lastQR = {
+      timestamp: parseInt(parts[1]) * 1000 // Convert seconds to ms
+    };
+
+    /* RESET TIMERS */
+    clearInterval(countdownInterval);
+    countdownInterval = setInterval(updateCountdown, 1000);
+
+    clearInterval(qrInterval);
+    qrInterval = setInterval(fetchQR, REFRESH_BEFORE_MS);
+
+    updateCountdown();
+
+  }, function() {
+    console.warn("QR fetch error");
   });
 }
 

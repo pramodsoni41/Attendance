@@ -307,6 +307,29 @@ function closeScanner(){
     });
   }
 }
+function enableZoomSlider(){
+
+  const slider = byId("zoomSlider");
+
+  slider.addEventListener("input", async () => {
+    try {
+      const track = html5QrCode.getRunningTrack();
+      const cap = track.getCapabilities();
+
+      if (cap.zoom) {
+        const min = cap.zoom.min;
+        const max = cap.zoom.max;
+
+        // map slider 1–5 → actual zoom range
+        const zoomValue = min + (slider.value - 1) * (max - min) / 4;
+
+        await track.applyConstraints({
+          advanced: [{ zoom: zoomValue }]
+        });
+      }
+    } catch(e){}
+  });
+}
 function startAutoZoom(){
 
   setInterval(async () => {
@@ -379,6 +402,8 @@ function startScanner(){
       // 🔥 Start continuous improvements
       startAutoZoom();
       enableAutoFocus();
+        enableZoomSlider();   // 🔥 ADD THIS
+
 
     });
 

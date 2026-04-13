@@ -17,6 +17,22 @@ body{
   min-height:100vh;
   margin:0;
 }
+
+#reader::before {
+  content: "";
+  position: absolute;
+  width: 80%;
+  height: 2px;
+  left: 10%;
+  top: 10%;
+  background: #00ff88;
+  animation: scanline 2s infinite linear;
+}
+
+@keyframes scanline {
+  0% { top: 10%; }
+  100% { top: 90%; }
+}
 .container{
   background:#fff;
   padding:25px;
@@ -57,7 +73,18 @@ button{
   color: #555;
   margin: 5px 0 10px;
 }
-
+#reader::after {
+  content: "";
+  position: absolute;
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  border: 3px solid #00ff88;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,255,150,0.5);
+  pointer-events: none;
+}
 .desc {
   font-size: 13px;
   color: #666;

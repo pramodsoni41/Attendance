@@ -6,44 +6,58 @@
 
 <style>
 body {
-  font-family: Arial;
+  margin: 0;
+  height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
   background: #f4f6f8;
+  font-family: Arial;
 }
 
 .card {
   background: white;
   padding: 25px;
   border-radius: 12px;
+  width: 320px;
   text-align: center;
-  width: 300px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+h3 {
+  margin-bottom: 10px;
+  color: #2563eb;
+}
+
+#status {
+  margin-top: 10px;
+  min-height: 20px;
+  font-weight: bold;
 }
 
 input {
   width: 100%;
   padding: 10px;
-  margin-top: 10px;
+  margin-top: 12px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
 }
 
 button {
-  margin-top: 10px;
-  padding: 10px;
   width: 100%;
+  padding: 10px;
+  margin-top: 10px;
   background: #2563eb;
   color: white;
   border: none;
   border-radius: 6px;
+  cursor: pointer;
 }
 
 .hidden {
   display: none;
 }
 </style>
-
 </head>
 
 <body>
@@ -51,21 +65,24 @@ button {
 <div class="card">
   <h3>Attendance</h3>
 
-  <div id="status">Loading...</div>
+  <div id="status">Initializing...</div>
 
   <div id="formSection" class="hidden">
     <input id="rollNo" placeholder="Enter Roll No">
-    <button onclick="submitRoll()">Submit</button>
+    <button id="submitBtn">Submit</button>
   </div>
 </div>
 
 <script>
 
 /* ================= CONFIG ================= */
-const API = "https://script.google.com/macros/s/AKfycbzGSHgfv3RzfS9yaPFsdH7qYX32149fZklezPyaDzADdplys4WFVle1WMN00PVcZbs/exec";
+const API = "https://script.google.com/macros/s/AKfycbzhBM6fFRXjkovVqWoCSQPO5mjwAcaPufzr7YJXBdqJMeoJpYOFBUwp55fvgYWSN4U/exec";
 
-/* ================= HELPERS ================= */
-function el(id){ return document.getElementById(id); }
+/* ================= ELEMENTS ================= */
+const status = document.getElementById("status");
+const form = document.getElementById("formSection");
+const rollInput = document.getElementById("rollNo");
+const submitBtn = document.getElementById("submitBtn");
 
 /* ================= PARSE QR ================= */
 function parseQR(raw){
@@ -74,53 +91,61 @@ function parseQR(raw){
   if(p.length < 4) return null;
 
   return {
-    session:p[0],
-    time:p[1],
-    token:p[2],
-    sig:p[3]
+    session: p[0],
+    time: p[1],
+    token: p[2],
+    sig: p[3]
   };
 }
 
 /* ================= JSONP ================= */
-function call(url, cbName, done){
-  const s = document.createElement("script");
+function call(url, cb, done){
 
-  window[cbName] = function(res){
-    delete window[cbName];
-    s.remove();
+  const script = document.createElement("script");
+
+  window[cb] = function(res){
+    delete window[cb];
+    script.remove();
     done(res);
   };
 
-  s.onerror = function(){
-    el("status").innerText = "Network Error";
+  script.onerror = function(){
+    status.style.color = "red";
+    status.innerText = "❌ Network Error";
   };
 
-  s.src = url + "&callback=" + cbName;
-  document.body.appendChild(s);
+  script.src = url + "&callback=" + cb;
+  document.body.appendChild(script);
 }
 
-/* ================= AUTO ================= */
+/* ================= UI HELPER ================= */
+function setStatus(msg, color="black"){
+  status.style.color = color;
+  status.innerHTML = msg;
+}
+
+/* ================= AUTO ATTEND ================= */
 function auto(){
+
+  setStatus("Checking...", "black");
 
   const payload = localStorage.getItem("qr");
   const scanTime = localStorage.getItem("scan_time");
   const device = localStorage.getItem("device");
 
   if(!payload){
-    el("status").innerText = "Scan QR first";
+    setStatus("⚠️ Scan QR first", "black");
     return;
   }
 
   const q = parseQR(payload);
 
   if(!q){
-    el("status").innerText = "Invalid QR";
+    setStatus("❌ Invalid QR", "red");
     return;
   }
 
-  el("status").innerText = "Checking...";
-
-  const cb = "c" + Date.now();
+  const cb = "auto_" + Date.now();
 
   const url = API
     + "?type=mark_attendance"
@@ -135,38 +160,45 @@ function auto(){
   call(url, cb, function(res){
 
     if(!res || !res.status){
-      el("status").innerText = "Server Error";
+      setStatus("❌ Server Error", "red");
       return;
     }
 
-if(res.status === "success"){
+    if(res.status === "success"){
 
-  if(res.duplicate){
-    el("status").innerHTML = "⚠️ Duplicate (within 30 min): " + res.name;
-  } else {
-    el("status").innerHTML = "✅ Marked: " + res.name;
-  }
+      if(res.duplicate){
+        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+      } else {
+        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
+      }
 
-  el("formSection").classList.add("hidden");
-  localStorage.removeItem("qr");
-}
+      form.classList.add("hidden");
+      localStorage.removeItem("qr");
+    }
 
     else if(res.status === "register_required"){
-      el("formSection").classList.remove("hidden");
-      el("status").innerText = "Enter Roll No";
+      setStatus("Enter Roll No", "black");
+      form.classList.remove("hidden");
+    }
+
+    else if(res.status === "device_already_registered"){
+      setStatus("🚫 Device mismatch detected<br>Contact instructor", "red");
+      form.classList.add("hidden");
     }
 
     else{
-      el("status").innerText = res.message || res.status;
+      setStatus("❌ " + (res.message || res.status), "red");
     }
 
   });
 }
 
 /* ================= REGISTER ================= */
-function submitRoll(){
+function register(){
 
-  const roll = el("rollNo").value.trim();
+  setStatus("Registering...", "black");
+
+  const roll = rollInput.value.trim();
 
   if(!roll){
     alert("Enter Roll No");
@@ -180,13 +212,11 @@ function submitRoll(){
   const q = parseQR(payload);
 
   if(!q){
-    el("status").innerText = "Invalid QR";
+    setStatus("❌ Invalid QR", "red");
     return;
   }
 
-  el("status").innerText = "Registering...";
-
-  const cb = "r" + Date.now();
+  const cb = "reg_" + Date.now();
 
   const url = API
     + "?type=mark_attendance"
@@ -201,12 +231,23 @@ function submitRoll(){
   call(url, cb, function(res){
 
     if(res.status === "success"){
-      el("status").innerHTML = "✅ Marked: " + res.name;
-      el("formSection").classList.add("hidden");
+
+      if(res.duplicate){
+        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+      } else {
+        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
+      }
+
+      form.classList.add("hidden");
       localStorage.removeItem("qr");
     }
+
+    else if(res.status === "device_already_registered"){
+      setStatus("🚫 This roll is linked to another device", "red");
+    }
+
     else{
-      el("status").innerText = res.message || res.status;
+      setStatus("❌ " + (res.message || res.status), "red");
     }
 
   });
@@ -230,6 +271,9 @@ window.onload = function(){
 
   auto();
 };
+
+/* ================= BUTTON ================= */
+submitBtn.onclick = register;
 
 </script>
 

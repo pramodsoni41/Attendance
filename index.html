@@ -62,7 +62,7 @@ button {
 <script>
 
 /* ================= CONFIG ================= */
-const API = "https://script.google.com/macros/s/AKfycbyBaOjANYcuEiW07yzYCsANmHxgOJcv0XjalAN_IR9DOVwgYnNkUeh5h1Oj4h6Syvw/exec";
+const API = "https://script.google.com/macros/s/AKfycbzGSHgfv3RzfS9yaPFsdH7qYX32149fZklezPyaDzADdplys4WFVle1WMN00PVcZbs/exec";
 
 /* ================= HELPERS ================= */
 function el(id){ return document.getElementById(id); }
@@ -142,7 +142,7 @@ function auto(){
 if(res.status === "success") {
 
   if(res.duplicate){
-    status.innerHTML = `⚠️ Duplicate Entry: <b>${res.name}</b>`;
+    status.innerHTML = `⚠️ Duplicate (within 30 min): <b>${res.name}</b>`;
   } else {
     status.innerHTML = `✅ Attendance marked: <b>${res.name}</b>`;
   }

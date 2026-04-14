@@ -139,15 +139,15 @@ function auto(){
       return;
     }
 
-if(res.status === "success") {
+if(res.status === "success"){
 
   if(res.duplicate){
-    status.innerHTML = `⚠️ Duplicate (within 30 min): <b>${res.name}</b>`;
+    el("status").innerHTML = "⚠️ Duplicate (within 30 min): " + res.name;
   } else {
-    status.innerHTML = `✅ Attendance marked: <b>${res.name}</b>`;
+    el("status").innerHTML = "✅ Marked: " + res.name;
   }
 
-  form.classList.add("hidden");
+  el("formSection").classList.add("hidden");
   localStorage.removeItem("qr");
 }
 

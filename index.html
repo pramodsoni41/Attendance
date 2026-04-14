@@ -139,11 +139,17 @@ function auto(){
       return;
     }
 
-    if(res.status === "success"){
-      el("status").innerHTML = "✅ Marked: " + res.name;
-      el("formSection").classList.add("hidden");
-      localStorage.removeItem("qr");
-    }
+if(res.status === "success") {
+
+  if(res.duplicate){
+    status.innerHTML = `⚠️ Duplicate Entry: <b>${res.name}</b>`;
+  } else {
+    status.innerHTML = `✅ Attendance marked: <b>${res.name}</b>`;
+  }
+
+  form.classList.add("hidden");
+  localStorage.removeItem("qr");
+}
 
     else if(res.status === "register_required"){
       el("formSection").classList.remove("hidden");

@@ -115,16 +115,33 @@ function call(url, cb, done){
 
   const script = document.createElement("script");
 
+  let completed = false;
+
   window[cb] = function(res){
+    if (completed) return;
+    completed = true;
+
     delete window[cb];
     script.remove();
     done(res);
   };
 
   script.onerror = function(){
-    status.style.color = "red";
-    status.innerText = "❌ Network Error";
+    if (completed) return;
+    completed = true;
+
+    setStatus("❌ Network Error", "red");
   };
+
+  // 🔥 IMPORTANT: timeout fix
+  setTimeout(() => {
+    if (!completed) {
+      completed = true;
+      delete window[cb];
+      script.remove();
+      setStatus("❌ Server timeout", "red");
+    }
+  }, 5000);
 
   script.src = url + "&callback=" + cb;
   document.body.appendChild(script);

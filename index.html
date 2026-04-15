@@ -233,13 +233,14 @@ call(buildUrl("", ""), cb, function(res){
       setStatus("🚫 Device mismatch detected<br>Contact instructor", "red");
       form.classList.add("hidden");
     }
-    else if(res.status === "out_of_range"){
-      setStatus("🚫 Not in classroom area", "red"); }
+
     else{
       setStatus("❌ " + (res.message || res.status), "red");
     }
 
   });
+setTimeout(() => {
+
 navigator.geolocation.getCurrentPosition(
   (pos) => {
     const lat = pos.coords.latitude;
@@ -254,7 +255,8 @@ navigator.geolocation.getCurrentPosition(
     maximumAge: 60000
   }
 );
-}
+
+}, 500);
 
 /* ================= REGISTER ================= */
 function register(){
@@ -312,9 +314,7 @@ call(buildUrl("", ""), cb, function(res){
     else if(res.status === "device_already_registered"){
       setStatus("🚫 This roll is linked to another device", "red");
     }
-else if(res.status === "out_of_range"){
-  setStatus("🚫 Not in classroom area", "red");
-}
+
     else{
       setStatus("❌ " + (res.message || res.status), "red");
     }

@@ -88,7 +88,7 @@ button:hover {
 <script>
 
 /* ================= CONFIG ================= */
-const API = "https://script.google.com/macros/s/AKfycbxK3AQQhjpy452ku6D3b1TUNltey_MwVgyCH1OaNs_OQxsA80GpjDdHZ3Lm71JELs4/exec";
+const API = "https://script.google.com/macros/s/AKfycbx_lEuqYpO0QUpQ9QPMIpmLjGMJuaJAybnoGz0UQwkrRToq_PD0fWg5MltKCJ52hz0/exec";
 
 /* ================= ELEMENTS ================= */
 const status = document.getElementById("status");
@@ -136,6 +136,38 @@ function setStatus(msg, color="black"){
   status.innerHTML = msg;
 }
 
+function getLocationAndSend(buildUrl, cbName, callback){
+
+  if (!navigator.geolocation) {
+    // No GPS → send normally
+    call(buildUrl("", ""), cbName, callback);
+    return;
+  }
+
+  setStatus("📍 Getting location...", "black");
+
+  navigator.geolocation.getCurrentPosition(
+
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      call(buildUrl(lat, lon), cbName, callback);
+    },
+
+    () => {
+      // GPS denied / failed → still allow
+      call(buildUrl("", ""), cbName, callback);
+    },
+
+    {
+      enableHighAccuracy: true,
+      timeout: 4000,
+      maximumAge: 0
+    }
+  );
+}
+
 /* ================= AUTO ATTEND ================= */
 function auto(){
 
@@ -159,7 +191,8 @@ function auto(){
 
   const cb = "auto_" + Date.now();
 
-  const url = API
+function buildUrl(lat, lon){
+  return API
     + "?type=mark_attendance"
     + "&student_id="
     + "&session_id=" + q.session
@@ -167,9 +200,12 @@ function auto(){
     + "&timestamp=" + q.time
     + "&scan_time=" + scanTime
     + "&signature=" + q.sig
-    + "&device_id=" + device;
+    + "&device_id=" + device
+    + "&lat=" + lat
+    + "&lon=" + lon;
+}
 
-  call(url, cb, function(res){
+getLocationAndSend(buildUrl, cb, function(res){
 
     if(!res || !res.status){
       setStatus("❌ Server Error", "red");
@@ -197,7 +233,8 @@ function auto(){
       setStatus("🚫 Device mismatch detected<br>Contact instructor", "red");
       form.classList.add("hidden");
     }
-
+    else if(res.status === "out_of_range"){
+      setStatus("🚫 Not in classroom area", "red"); }
     else{
       setStatus("❌ " + (res.message || res.status), "red");
     }
@@ -230,7 +267,8 @@ function register(){
 
   const cb = "reg_" + Date.now();
 
-  const url = API
+  function buildUrl(lat, lon){
+  return API
     + "?type=mark_attendance"
     + "&student_id=" + encodeURIComponent(roll)
     + "&session_id=" + q.session
@@ -238,9 +276,12 @@ function register(){
     + "&timestamp=" + q.time
     + "&scan_time=" + scanTime
     + "&signature=" + q.sig
-    + "&device_id=" + device;
+    + "&device_id=" + device
+    + "&lat=" + lat
+    + "&lon=" + lon;
+}
 
-  call(url, cb, function(res){
+getLocationAndSend(buildUrl, cb, function(res){
 
     if(res.status === "success"){
 
@@ -257,7 +298,9 @@ function register(){
     else if(res.status === "device_already_registered"){
       setStatus("🚫 This roll is linked to another device", "red");
     }
-
+else if(res.status === "out_of_range"){
+  setStatus("🚫 Not in classroom area", "red");
+}
     else{
       setStatus("❌ " + (res.message || res.status), "red");
     }

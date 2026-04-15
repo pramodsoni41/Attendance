@@ -320,6 +320,8 @@ call(buildUrl("", ""), cb, function(res){
     }
 
   });
+setTimeout(() => {
+
 navigator.geolocation.getCurrentPosition(
   (pos) => {
     const lat = pos.coords.latitude;
@@ -334,6 +336,8 @@ navigator.geolocation.getCurrentPosition(
     maximumAge: 60000
   }
 );
+
+}, 500);
 }
 
 /* ================= INIT ================= */

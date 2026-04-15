@@ -205,7 +205,7 @@ function buildUrl(lat, lon){
     + "&lon=" + lon;
 }
 
-getLocationAndSend(buildUrl, cb, function(res){
+call(buildUrl("", ""), cb, function(res){
 
     if(!res || !res.status){
       setStatus("❌ Server Error", "red");
@@ -240,6 +240,20 @@ getLocationAndSend(buildUrl, cb, function(res){
     }
 
   });
+navigator.geolocation.getCurrentPosition(
+  (pos) => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    console.log("GPS:", lat, lon);
+  },
+  () => {},
+  {
+    enableHighAccuracy: false,
+    timeout: 2000,
+    maximumAge: 60000
+  }
+);
 }
 
 /* ================= REGISTER ================= */
@@ -281,7 +295,7 @@ function register(){
     + "&lon=" + lon;
 }
 
-getLocationAndSend(buildUrl, cb, function(res){
+call(buildUrl("", ""), cb, function(res){
 
     if(res.status === "success"){
 
@@ -306,6 +320,20 @@ else if(res.status === "out_of_range"){
     }
 
   });
+navigator.geolocation.getCurrentPosition(
+  (pos) => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    console.log("GPS:", lat, lon);
+  },
+  () => {},
+  {
+    enableHighAccuracy: false,
+    timeout: 2000,
+    maximumAge: 60000
+  }
+);
 }
 
 /* ================= INIT ================= */

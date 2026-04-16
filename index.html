@@ -125,15 +125,24 @@ function call(url, cb, done){
   };
 
   script.onerror = function(){
-    status.style.color = "red";
-    status.innerText = "❌ Network Error";
+    delete window[cb];
+    script.remove();
+    setStatus("❌ Network Error", "red");
   };
 
-  //script.src = url + "&callback=" + cb;
-  fetch(url)
-  .then(res => res.json())
-  .then(res => handle(res))
+  // ✅ THIS IS THE FIX
+  script.src = url + "&callback=" + cb;
+
   document.body.appendChild(script);
+
+  // ✅ TIMEOUT SAFETY (VERY IMPORTANT)
+  setTimeout(() => {
+    if (window[cb]) {
+      delete window[cb];
+      script.remove();
+      setStatus("❌ Server timeout", "red");
+    }
+  }, 5000);
 }
 
 /* ================= UI HELPER ================= */

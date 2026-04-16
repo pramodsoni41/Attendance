@@ -100,6 +100,7 @@ let gps = {
   lon: ""
 };
 let isProcessing = false;
+let isResponseReceived = false;   // 🔥 ADD THIS
 /* ================= PARSE QR ================= */
 function parseQR(raw){
   if(!raw) return null;
@@ -120,6 +121,7 @@ function call(url, cb, done){
   const script = document.createElement("script");
 
   window[cb] = function(res){
+    isResponseReceived = true;   // 🔥 ADD THIS
     delete window[cb];
     script.remove();
     done(res);
@@ -139,7 +141,7 @@ function call(url, cb, done){
 
   // ✅ TIMEOUT SAFETY (VERY IMPORTANT)
   setTimeout(() => {
-    if (window[cb]) {
+    if (!isResponseReceived) {
       isProcessing = false;   // 🔥 ADD THIS
       delete window[cb];
       script.remove();

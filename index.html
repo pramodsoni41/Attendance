@@ -138,23 +138,7 @@ function setStatus(msg, color="black"){
   status.style.color = color;
   status.innerHTML = msg;
 }
-if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      gps.lat = pos.coords.latitude.toFixed(6);
-      gps.lon = pos.coords.longitude.toFixed(6);
-      console.log("GPS:", gps.lat, gps.lon);
-    },
-    () => {
-      console.log("GPS failed (ignored)");
-    },
-    {
-      enableHighAccuracy: false,  // 🔥 FAST
-      timeout: 3000,              // 🔥 VERY FAST
-      maximumAge: 60000           // 🔥 USE CACHED
-    }
-  );
-}
+
 
 /* ================= AUTO ATTEND ================= */
 function auto(){
@@ -304,7 +288,26 @@ window.onload = function(){
     localStorage.setItem("qr", p);
     localStorage.setItem("scan_time", Math.floor(Date.now()/1000));
   }
-
+// 🔥 SAFE GPS CALL (after load)
+  if (navigator.geolocation) {
+    setTimeout(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          gps.lat = pos.coords.latitude.toFixed(6);
+          gps.lon = pos.coords.longitude.toFixed(6);
+          console.log("GPS:", gps.lat, gps.lon);
+        },
+        (err) => {
+          console.log("GPS failed:", err.message);
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 3000,
+          maximumAge: 60000
+        }
+      );
+    }, 500);   // 🔥 delay avoids crash
+  }
   auto();
 };
 

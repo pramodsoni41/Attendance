@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Attendance</title>
+
+<style>
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f4f6f8;
+  font-family: Arial;
+}
+
+.card {
+  background: white;
+  padding: 30px;
+  border-radius: 14px;
+  width: 360px;              /* 🔥 wider */
+  text-align: center;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+}
+
+h3 {
+  margin-bottom: 15px;
+  color: #2563eb;
+  font-size: 22px;           /* 🔥 bigger title */
+}
+
+#status {
+  margin-top: 10px;
+  min-height: 28px;
+  font-weight: bold;
+  font-size: 16px;           /* 🔥 bigger message */
+}
+
+/* 🔥 BIG INPUT */
+input {
+  width: 100%;
+  padding: 14px;
+  margin-top: 18px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 18px;           /* 🔥 big text */
+  text-align: center;
+}
+
+/* 🔥 BIG BUTTON */
+button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;           /* 🔥 big text */
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1e4ed8;
+}
+
+.hidden {
+  display: none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+  <h3>Attendance</h3>
+
+  <div id="status">Initializing...</div>
+
+  <div id="formSection" class="hidden">
+    <input id="rollNo" placeholder="Enter Roll No">
+    <button id="submitBtn">Submit</button>
+  </div>
+</div>
+
+<script>
+
+/* ================= CONFIG ================= */
+const API = "https://script.google.com/macros/s/AKfycbz1H8EikEUDHjNAmaaEdWDfBgZzXz0vflt6cQIjQIcnYjK7-Lj7N0JklDnheCMZz2Q/exec";
+
+/* ================= ELEMENTS ================= */
+const status = document.getElementById("status");
+const form = document.getElementById("formSection");
+const rollInput = document.getElementById("rollNo");
+const submitBtn = document.getElementById("submitBtn");
+
+/* ================= PARSE QR ================= */
+function parseQR(raw){
+  if(!raw) return null;
+  const p = raw.split('|');
+  if(p.length < 4) return null;
+
+  return {
+    session: p[0],
+    time: p[1],
+    token: p[2],
+    sig: p[3]
+  };
+}
+
+/* ================= JSONP ================= */
+function call(url, cb, done){
+
+  const script = document.createElement("script");
+
+  window[cb] = function(res){
+    delete window[cb];
+    script.remove();
+    done(res);
+  };
+
+  script.onerror = function(){
+    status.style.color = "red";
+    status.innerText = "❌ Network Error";
+  };
+
+  script.src = url + "&callback=" + cb;
+  document.body.appendChild(script);
+}
+
+/* ================= UI HELPER ================= */
+function setStatus(msg, color="black"){
+  status.style.color = color;
+  status.innerHTML = msg;
+}
+
+
+/* ================= AUTO ATTEND ================= */
+function auto(){
+
+  setStatus("Checking...", "black");
+
+  const payload = localStorage.getItem("qr");
+  const scanTime = localStorage.getItem("scan_time");
+  const device = localStorage.getItem("device");
+
+  if(!payload){
+    setStatus("⚠️ Scan QR first", "black");
+    return;
+  }
+
+  const q = parseQR(payload);
+
+  if(!q){
+    setStatus("❌ Invalid QR", "red");
+    return;
+  }
+
+  const cb = "auto_" + Date.now();
+
+  const url = API
+    + "?type=mark_attendance"
+    + "&student_id="
+    + "&session_id=" + q.session
+    + "&token=" + q.token
+    + "&timestamp=" + q.time
+    + "&scan_time=" + scanTime
+    + "&signature=" + q.sig
+    + "&device_id=" + device;
+
+  call(url, cb, function(res){
+
+    if(!res || !res.status){
+      setStatus("❌ Server Error", "red");
+      return;
+    }
+
+    if(res.status === "success"){
+
+      if(res.duplicate){
+        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+      } else {
+        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
+      }
+
+      form.classList.add("hidden");
+      localStorage.removeItem("qr");
+    }
+
+    else if(res.status === "register_required"){
+      setStatus("Enter Roll No", "black");
+      form.classList.remove("hidden");
+    }
+
+    else if(res.status === "device_already_registered"){
+      setStatus("🚫 Device mismatch detected<br>Contact instructor", "red");
+      form.classList.add("hidden");
+    }
+
+    else{
+      setStatus("❌ " + (res.message || res.status), "red");
+    }
+
+  });
+}
+
+/* ================= REGISTER ================= */
+function register(){
+
+  setStatus("Registering...", "black");
+
+  const roll = rollInput.value.trim();
+
+  if(!roll){
+    alert("Enter Roll No");
+    return;
+  }
+
+  const payload = localStorage.getItem("qr");
+  const scanTime = localStorage.getItem("scan_time");
+  const device = localStorage.getItem("device");
+
+  const q = parseQR(payload);
+
+  if(!q){
+    setStatus("❌ Invalid QR", "red");
+    return;
+  }
+
+  const cb = "reg_" + Date.now();
+
+  const url = API
+    + "?type=mark_attendance"
+    + "&student_id=" + encodeURIComponent(roll)
+    + "&session_id=" + q.session
+    + "&token=" + q.token
+    + "&timestamp=" + q.time
+    + "&scan_time=" + scanTime
+    + "&signature=" + q.sig
+    + "&device_id=" + device;
+
+  call(url, cb, function(res){
+
+    if(res.status === "success"){
+
+      if(res.duplicate){
+        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+      } else {
+        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
+      }
+
+      form.classList.add("hidden");
+      localStorage.removeItem("qr");
+    }
+
+    else if(res.status === "device_already_registered"){
+      setStatus("🚫 This roll is linked to another device", "red");
+    }
+
+    else{
+      setStatus("❌ " + (res.message || res.status), "red");
+    }
+
+  });
+}
+
+/* ================= INIT ================= */
+window.onload = function(){
+
+  // device id
+  if(!localStorage.getItem("device")){
+    localStorage.setItem("device","DEV-"+Math.random().toString(36).slice(2,8));
+  }
+
+  // read QR
+  const p = new URLSearchParams(location.search).get("p");
+
+  if(p){
+    localStorage.setItem("qr", p);
+    localStorage.setItem("scan_time", Math.floor(Date.now()/1000));
+  }
+
+  auto();
+};
+
+/* ================= BUTTON ================= */
+submitBtn.onclick = register;
+
+</script>
+
+</body>
+</html>

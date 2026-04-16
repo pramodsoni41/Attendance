@@ -88,14 +88,17 @@ button:hover {
 <script>
 
 /* ================= CONFIG ================= */
-const API = "https://script.google.com/macros/s/AKfycbz1H8EikEUDHjNAmaaEdWDfBgZzXz0vflt6cQIjQIcnYjK7-Lj7N0JklDnheCMZz2Q/exec";
+const API = "https://script.google.com/macros/s/AKfycbx9yCpmJxsMGg0nPW32AGAeQLBWnWlPZAfIjjx3BkdojlXME-5OEl8wuSqf5T1CnA/exec";
 
 /* ================= ELEMENTS ================= */
 const status = document.getElementById("status");
 const form = document.getElementById("formSection");
 const rollInput = document.getElementById("rollNo");
 const submitBtn = document.getElementById("submitBtn");
-
+let gps = {
+  lat: "",
+  lon: ""
+};
 /* ================= PARSE QR ================= */
 function parseQR(raw){
   if(!raw) return null;
@@ -135,7 +138,23 @@ function setStatus(msg, color="black"){
   status.style.color = color;
   status.innerHTML = msg;
 }
-
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      gps.lat = pos.coords.latitude.toFixed(6);
+      gps.lon = pos.coords.longitude.toFixed(6);
+      console.log("GPS:", gps.lat, gps.lon);
+    },
+    () => {
+      console.log("GPS failed (ignored)");
+    },
+    {
+      enableHighAccuracy: false,  // 🔥 FAST
+      timeout: 1500,              // 🔥 VERY FAST
+      maximumAge: 60000           // 🔥 USE CACHED
+    }
+  );
+}
 
 /* ================= AUTO ATTEND ================= */
 function auto(){
@@ -168,7 +187,9 @@ function auto(){
     + "&timestamp=" + q.time
     + "&scan_time=" + scanTime
     + "&signature=" + q.sig
-    + "&device_id=" + device;
+    + "&device_id=" + device
+    + "&lat=" + gps.lat
++ "&lon=" + gps.lon;
 
   call(url, cb, function(res){
 
@@ -239,7 +260,9 @@ function register(){
     + "&timestamp=" + q.time
     + "&scan_time=" + scanTime
     + "&signature=" + q.sig
-    + "&device_id=" + device;
+    + "&device_id=" + device
+    + "&lat=" + gps.lat
++ "&lon=" + gps.lon;
 
   call(url, cb, function(res){
 

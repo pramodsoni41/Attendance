@@ -117,7 +117,7 @@ function parseQR(raw){
 
 /* ================= JSONP ================= */
 function call(url, cb, done){
-
+isResponseReceived = false;
   const script = document.createElement("script");
 
   window[cb] = function(res){
@@ -140,14 +140,11 @@ function call(url, cb, done){
   document.body.appendChild(script);
 
   // ✅ TIMEOUT SAFETY (VERY IMPORTANT)
-  setTimeout(() => {
-    if (!isResponseReceived) {
-      isProcessing = false;   // 🔥 ADD THIS
-      delete window[cb];
-      script.remove();
-      setStatus("❌ Server timeout", "red");
-    }
-  }, 15000);
+setTimeout(() => {
+  if (!isResponseReceived) {
+    setStatus("⏳ Still verifying...", "black");
+  }
+}, 5000);
 }
 
 /* ================= UI HELPER ================= */

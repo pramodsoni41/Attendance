@@ -140,6 +140,7 @@ function call(url, cb, done){
   // ✅ TIMEOUT SAFETY (VERY IMPORTANT)
   setTimeout(() => {
     if (window[cb]) {
+      isProcessing = false;   // 🔥 ADD THIS
       delete window[cb];
       script.remove();
       setStatus("❌ Server timeout", "red");
@@ -161,6 +162,7 @@ function auto(){
 if (localStorage.getItem("done") === "1") {
     return;
   }
+  isProcessing = true;   // 🔥 ADD THIS LINE
   setStatus("Verifying...", "black");
 
   const payload = localStorage.getItem("qr");

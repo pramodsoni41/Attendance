@@ -99,6 +99,7 @@ let gps = {
   lat: "",
   lon: ""
 };
+let isProcessing = false;
 /* ================= PARSE QR ================= */
 function parseQR(raw){
   if(!raw) return null;
@@ -125,6 +126,7 @@ function call(url, cb, done){
   };
 
   script.onerror = function(){
+     isProcessing = false;
     delete window[cb];
     script.remove();
     setStatus("❌ Network Error", "red");
@@ -154,8 +156,12 @@ function setStatus(msg, color="black"){
 
 /* ================= AUTO ATTEND ================= */
 function auto(){
+    if (isProcessing) return;   // 🔥 prevent double run
 
-  setStatus("Checking...", "black");
+if (localStorage.getItem("done") === "1") {
+    return;
+  }
+  setStatus("Verifying...", "black");
 
   const payload = localStorage.getItem("qr");
   const scanTime = localStorage.getItem("scan_time");
@@ -188,13 +194,15 @@ function auto(){
 + "&lon=" + gps.lon;
 
   call(url, cb, function(res){
-
+  isProcessing = false;
     if(!res || !res.status){
       setStatus("❌ Server Error", "red");
       return;
     }
 
     if(res.status === "success"){
+
+      localStorage.setItem("done", "1");
 
       if(res.duplicate){
         setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
@@ -204,6 +212,7 @@ function auto(){
 
       form.classList.add("hidden");
       localStorage.removeItem("qr");
+      localStorage.removeItem("scan_time");
     }
 
     else if(res.status === "register_required"){
@@ -262,17 +271,20 @@ function register(){
 
   call(url, cb, function(res){
 
-    if(res.status === "success"){
+  if(res.status === "success"){
 
-      if(res.duplicate){
-        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
-      } else {
-        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
-      }
+    localStorage.setItem("done", "1");
 
-      form.classList.add("hidden");
-      localStorage.removeItem("qr");
+    if(res.duplicate){
+      setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+    } else {
+      setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
     }
+
+    form.classList.add("hidden");
+    localStorage.removeItem("qr");
+    localStorage.removeItem("scan_time");
+  }
 
     else if(res.status === "device_already_registered"){
       setStatus("🚫 This roll is linked to another device", "red");
@@ -297,6 +309,7 @@ window.onload = function(){
   const p = new URLSearchParams(location.search).get("p");
 
   if(p){
+    localStorage.removeItem("done");
     localStorage.setItem("qr", p);
     localStorage.setItem("scan_time", Math.floor(Date.now()/1000));
   }

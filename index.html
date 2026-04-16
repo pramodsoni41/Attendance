@@ -88,7 +88,7 @@ button:hover {
 <script>
 
 /* ================= CONFIG ================= */
-const API = "https://script.google.com/macros/s/AKfycbxC36gsDAQaiH8_qHRD5WUGXKH9QjaNz41V4emTamkpQMMnJzoZAg6vLNCZMHfPDcg/exec";
+const API = "https://script.google.com/macros/s/AKfycbxV8GzAw32IOhD_cqzHNkc2nFIAV1-qpde20JTTFbE5nQWsNolmMYlHMDHorEg4lu8/exec";
 
 /* ================= ELEMENTS ================= */
 const status = document.getElementById("status");
@@ -129,7 +129,10 @@ function call(url, cb, done){
     status.innerText = "❌ Network Error";
   };
 
-  script.src = url + "&callback=" + cb;
+  //script.src = url + "&callback=" + cb;
+  fetch(url)
+  .then(res => res.json())
+  .then(res => handle(res))
   document.body.appendChild(script);
 }
 
@@ -289,7 +292,9 @@ window.onload = function(){
     localStorage.setItem("scan_time", Math.floor(Date.now()/1000));
   }
 // 🔥 SAFE GPS CALL (after load)
-  if (navigator.geolocation) {
+
+  auto();
+    if (navigator.geolocation) {
     setTimeout(() => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -302,14 +307,14 @@ window.onload = function(){
         },
         {
           enableHighAccuracy: false,
-          timeout: 3000,
+          timeout: 1500,
           maximumAge: 60000
         }
       );
     }, 500);   // 🔥 delay avoids crash
   }
-  auto();
 };
+
 
 /* ================= BUTTON ================= */
 submitBtn.onclick = register;

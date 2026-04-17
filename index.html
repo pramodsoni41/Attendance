@@ -316,25 +316,31 @@ window.onload = function(){
   }
 // 🔥 SAFE GPS CALL (after load)
 
-  auto();
-    if (navigator.geolocation) {
-    setTimeout(() => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          gps.lat = pos.coords.latitude.toFixed(6);
-          gps.lon = pos.coords.longitude.toFixed(6);
-          console.log("GPS:", gps.lat, gps.lon);
-        },
-        (err) => {
-          console.log("GPS failed:", err.message);
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: 1500,
-          maximumAge: 60000
-        }
-      );
-    }, 500);   // 🔥 delay avoids crash
+  if (navigator.geolocation) {
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        gps.lat = pos.coords.latitude.toFixed(6);
+        gps.lon = pos.coords.longitude.toFixed(6);
+
+        console.log("GPS:", gps.lat, gps.lon);
+
+        auto();   // 🔥 CALL AFTER GPS
+      },
+      (err) => {
+        console.log("GPS failed:", err.message);
+
+        auto();   // 🔥 fallback (no GPS)
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 2000,
+        maximumAge: 60000
+      }
+    );
+
+  } else {
+    auto();
   }
 };
 

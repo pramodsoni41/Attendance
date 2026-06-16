@@ -79,16 +79,20 @@ button:hover {
 
   <div id="status">Initializing...</div>
 
-  <div id="formSection" class="hidden">
-    <input id="rollNo" placeholder="Enter Roll No">
-    <button id="submitBtn">Submit</button>
-  </div>
 </div>
 
 <script>
 
 /* ================= CONFIG ================= */
 const API = "https://script.google.com/macros/s/AKfycbz4llDSqtWhseClJggBwQTEtAdi78CaKriGQw-Irdalww-SU3kvzD_GcuqXQbXJPyY/exec";
+
+/* ================= CLASSROOM SESSION ================= */
+const AUTH = {
+  sessionToken: localStorage.getItem("student_session_token") || "",
+  roll:         localStorage.getItem("student_roll")          || "",
+  name:         localStorage.getItem("student_name")          || "",
+  ok: !!(localStorage.getItem("student_session_token") || localStorage.getItem("student_roll"))
+};
 
 /* ================= ELEMENTS ================= */
 const status = document.getElementById("status");
@@ -156,27 +160,33 @@ function setStatus(msg, color="black"){
 
 /* ================= AUTO ATTEND ================= */
 function auto(){
-    if (isProcessing) return;   // 🔥 prevent double run
+  if (isProcessing) return;
 
-if (localStorage.getItem("done") === "1") {
+  if (localStorage.getItem("done") === "1") return;
+
+  // Block if not logged into classroom
+  if (!AUTH.ok) {
+    setStatus("🔒 Please login to the <a href='https://pramodsoni.in/classroom/' style='color:#2563eb'>Classroom Portal</a> first, then scan QR again.", "red");
     return;
   }
-  isProcessing = true;   // 🔥 ADD THIS LINE
+
+  isProcessing = true;
   setStatus("Verifying...", "black");
 
   const payload = localStorage.getItem("qr");
   const scanTime = localStorage.getItem("scan_time");
   const device = localStorage.getItem("device");
 
-  if(!payload){
+  if (!payload) {
     setStatus("⚠️ Scan QR first", "black");
+    isProcessing = false;
     return;
   }
 
   const q = parseQR(payload);
-
-  if(!q){
+  if (!q) {
     setStatus("❌ Invalid QR", "red");
+    isProcessing = false;
     return;
   }
 
@@ -184,7 +194,8 @@ if (localStorage.getItem("done") === "1") {
 
   const url = API
     + "?type=mark_attendance"
-    + "&student_id="
+    + "&student_id=" + encodeURIComponent(AUTH.roll)
+    + "&session_token=" + encodeURIComponent(AUTH.sessionToken)
     + "&session_id=" + q.session
     + "&token=" + q.token
     + "&timestamp=" + q.time
@@ -192,111 +203,42 @@ if (localStorage.getItem("done") === "1") {
     + "&signature=" + q.sig
     + "&device_id=" + device
     + "&lat=" + gps.lat
-+ "&lon=" + gps.lon;
+    + "&lon=" + gps.lon;
 
   call(url, cb, function(res){
-  isProcessing = false;
-    if(!res || !res.status){
+    isProcessing = false;
+    if (!res || !res.status) {
       setStatus("❌ Server Error", "red");
       return;
     }
 
-    if(res.status === "success"){
-
+    if (res.status === "success") {
       localStorage.setItem("done", "1");
-
-      if(res.duplicate){
-        setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
+      if (res.duplicate) {
+        setStatus("⚠️ Already marked: <b>" + res.name + "</b>", "orange");
       } else {
-        setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
+        setStatus("✅ Attendance marked: <b>" + res.name + "</b>", "green");
       }
-
       form.classList.add("hidden");
       localStorage.removeItem("qr");
       localStorage.removeItem("scan_time");
     }
 
-    else if(res.status === "register_required"){
-      setStatus("Enter Roll No", "black");
-      form.classList.remove("hidden");
+    else if (res.status === "register_required") {
+      // Shouldn't happen for Google-login users, but fallback
+      setStatus("⚠️ Student not found. Contact instructor.", "red");
     }
 
-    else if(res.status === "device_already_registered"){
-      setStatus("🚫 Device mismatch detected<br>Contact instructor", "red");
-      form.classList.add("hidden");
+    else if (res.status === "device_already_registered") {
+      setStatus("🚫 Device mismatch. Contact instructor.", "red");
     }
 
-    else{
+    else {
       setStatus("❌ " + (res.message || res.status), "red");
     }
-
   });
 }
 
-/* ================= REGISTER ================= */
-function register(){
-
-  setStatus("Registering...", "black");
-
-  const roll = rollInput.value.trim();
-
-  if(!roll){
-    alert("Enter Roll No");
-    return;
-  }
-
-  const payload = localStorage.getItem("qr");
-  const scanTime = localStorage.getItem("scan_time");
-  const device = localStorage.getItem("device");
-
-  const q = parseQR(payload);
-
-  if(!q){
-    setStatus("❌ Invalid QR", "red");
-    return;
-  }
-
-  const cb = "reg_" + Date.now();
-
-  const url = API
-    + "?type=mark_attendance"
-    + "&student_id=" + encodeURIComponent(roll)
-    + "&session_id=" + q.session
-    + "&token=" + q.token
-    + "&timestamp=" + q.time
-    + "&scan_time=" + scanTime
-    + "&signature=" + q.sig
-    + "&device_id=" + device
-    + "&lat=" + gps.lat
-+ "&lon=" + gps.lon;
-
-  call(url, cb, function(res){
-
-  if(res.status === "success"){
-
-    localStorage.setItem("done", "1");
-
-    if(res.duplicate){
-      setStatus("⚠️ Duplicate (within 30 min): <b>" + res.name + "</b>", "orange");
-    } else {
-      setStatus("✅ Marked: <b>" + res.name + "</b>", "green");
-    }
-
-    form.classList.add("hidden");
-    localStorage.removeItem("qr");
-    localStorage.removeItem("scan_time");
-  }
-
-    else if(res.status === "device_already_registered"){
-      setStatus("🚫 This roll is linked to another device", "red");
-    }
-
-    else{
-      setStatus("❌ " + (res.message || res.status), "red");
-    }
-
-  });
-}
 
 /* ================= INIT ================= */
 window.onload = function(){
@@ -350,8 +292,6 @@ window.onload = function(){
 };
 
 
-/* ================= BUTTON ================= */
-submitBtn.onclick = register;
 
 </script>
 

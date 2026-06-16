@@ -53,7 +53,7 @@ canvas {
 
 <script>
 
-const API_URL = "https://script.google.com/macros/s/AKfycbz4s5JFw0hr6QjHRwdK2HXl5BqxppP6XTowpYfOx8kpQ4npaZqpGQj-4JvqEaRvg6o/exec";
+const API_URL    = "https://script.google.com/macros/s/AKfycbyaUB903dleoXJaCPKWKmO5znQjDYbdNdgwskUm2yk22uKq_0aEh5tgeyxx_VZcvvTu/exec";
 const PORTAL_URL = "https://pramodsoni.in/Attendance/";
 
 // Timing
@@ -61,11 +61,12 @@ let QR_VALIDITY_MS = 60000;
 const LEAD_TIME_MS = 3000;
 
 // State
-let ADMIN_PASS = "";
-let qrTimeout = null;
+let ADMIN_PASS  = "";
+let SESSION_ID  = "";
+let qrTimeout   = null;
 let countdownInterval = null;
-let lastQR = null;
-let timeOffset = 0;
+let lastQR      = null;
+let timeOffset  = 0;
 
 /* ================= JSONP ================= */
 function jsonp(url, cb, success, fail) {
@@ -92,24 +93,35 @@ function init() {
   const cb = "admin_" + Date.now();
 
   jsonp(`${API_URL}?type=get_admin_pass`, cb, (data) => {
-
-    if (data.status !== "success") {
-      document.body.innerHTML = "Server Error";
-      return;
-    }
+    if (data.status !== "success") { document.body.innerHTML = "Server Error"; return; }
 
     ADMIN_PASS = data.pass;
-
     const input = prompt("Enter Admin Password:");
+    if (input !== ADMIN_PASS) { document.body.innerHTML = "<h2>Unauthorized</h2>"; return; }
 
-    if (input !== ADMIN_PASS) {
-      document.body.innerHTML = "<h2>Unauthorized</h2>";
-      return;
-    }
+    // Load sessions from Config sheet
+    const cb2 = "sess_" + Date.now();
+    jsonp(`${API_URL}?type=get_sessions`, cb2, (res) => {
+      const sessions = (res.status === "success" && res.sessions.length) ? res.sessions : null;
 
-    document.getElementById("title").innerText = "QR Active";
-    fetchQR();
+      if (sessions && sessions.length > 1) {
+        const list = sessions.map((s, i) => `${i + 1}. ${s}`).join("\n");
+        const choice = prompt(`Select session:\n${list}\n\nEnter number:`);
+        const idx = parseInt(choice) - 1;
+        SESSION_ID = (idx >= 0 && idx < sessions.length) ? sessions[idx] : sessions[0];
+      } else if (sessions && sessions.length === 1) {
+        SESSION_ID = sessions[0];
+      } else {
+        SESSION_ID = prompt("Enter Session ID (e.g. CE618):") || "DEFAULT";
+      }
 
+      document.getElementById("title").innerText = `Session: ${SESSION_ID}`;
+      fetchQR();
+    }, () => {
+      SESSION_ID = prompt("Enter Session ID (e.g. CE618):") || "DEFAULT";
+      document.getElementById("title").innerText = `Session: ${SESSION_ID}`;
+      fetchQR();
+    });
   });
 }
 
@@ -118,7 +130,7 @@ function fetchQR() {
 
   const cb = "qr_" + Date.now();
 
-  jsonp(`${API_URL}?type=generate_qr&session_id=CE101`, cb, (data) => {
+  jsonp(`${API_URL}?type=generate_qr&session_id=${encodeURIComponent(SESSION_ID)}`, cb, (data) => {
 
     if (data.status !== "success") {
       qrTimeout = setTimeout(fetchQR, 2000);

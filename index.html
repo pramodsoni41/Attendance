@@ -301,9 +301,12 @@ function register(){
 /* ================= INIT ================= */
 window.onload = function(){
 
-  // device id
-  if(!localStorage.getItem("device")){
-    localStorage.setItem("device","DEV-"+Math.random().toString(36).slice(2,8));
+  // Use device ID from classroom login if available, otherwise generate one
+  const classroomDeviceId = localStorage.getItem("device_id");
+  if (classroomDeviceId) {
+    localStorage.setItem("device", classroomDeviceId);
+  } else if (!localStorage.getItem("device")) {
+    localStorage.setItem("device", "DEV-" + Math.random().toString(36).slice(2, 8));
   }
 
   // read QR
@@ -316,32 +319,34 @@ window.onload = function(){
   }
 // 🔥 SAFE GPS CALL (after load)
 
-  if (navigator.geolocation) {
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        gps.lat = pos.coords.latitude.toFixed(6);
-        gps.lon = pos.coords.longitude.toFixed(6);
-
-        console.log("GPS:", gps.lat, gps.lon);
-
-        auto();   // 🔥 CALL AFTER GPS
-      },
-      (err) => {
-        console.log("GPS failed:", err.message);
-
-        auto();   // 🔥 fallback (no GPS)
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 20000,
-        maximumAge: 120000
-      }
-    );
-
-  } else {
-    auto();
+  if (!navigator.geolocation) {
+    setStatus("❌ GPS not supported on this device. Use a smartphone.", "red");
+    return;
   }
+
+  setStatus("📍 Getting your location...", "black");
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      gps.lat = pos.coords.latitude.toFixed(6);
+      gps.lon = pos.coords.longitude.toFixed(6);
+      auto();
+    },
+    (err) => {
+      // GPS denied or unavailable — block attendance
+      const messages = {
+        1: "❌ Location access denied. Enable GPS permission and refresh.",
+        2: "❌ Location unavailable. Move to an open area and refresh.",
+        3: "❌ Location timed out. Refresh and try again."
+      };
+      setStatus(messages[err.code] || "❌ GPS error. Enable location and refresh.", "red");
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 20000,
+      maximumAge: 120000
+    }
+  );
 };
 
 

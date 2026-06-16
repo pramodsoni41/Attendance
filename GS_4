@@ -1,14 +1,16 @@
 /*************************************************
- * SECURE QR ATTENDANCE SYSTEM - BACKEND (GAS)
- * Device-bound attendance with first-time registration
- * Optimized for fast scan and smoother classroom use
+ * SECURE QR ATTENDANCE SYSTEM - FAST BACKEND
+ * Optimized version of original logic
  *************************************************/
 
 /* ================= CONFIG DEFAULTS ================= */
 const DEFAULT_ADMIN_PASS = "admin123";
-const DEFAULT_QR_VALIDITY_SEC = 40;   // visible validity
-const QR_GRACE_SEC = 10;              // extra tolerance
-const QR_CACHE_TTL_SEC = 120;         // cache validity > visible validity
+const DEFAULT_QR_VALIDITY_SEC = 40;
+const QR_GRACE_SEC = 10;
+const QR_CACHE_TTL_SEC = 120;
+const STUDENT_CACHE_TTL_SEC = 300;
+const CONFIG_CACHE_TTL_SEC = 300;
+const DUPLICATE_WINDOW_SEC = 1200;
 
 /**
  * Main Web App Entry Point
@@ -59,16 +61,9 @@ function handleGenerateQR_(params) {
   const shortSig = fullSig.substring(0, 16);
   const qrString = [session_id, timestampSec, token, shortSig].join("|");
 
-  const cacheData = JSON.stringify({
-    session_id: session_id,
-    timestamp: timestampSec,
-    signature: shortSig
-  });
-
-  // Keep token alive longer than on-screen validity
   CacheService.getScriptCache().put(
     "qr_token_" + token,
-    cacheData,
+    JSON.stringify({ session_id: session_id, timestamp: timestampSec, signature: shortSig }),
     QR_CACHE_TTL_SEC
   );
 
@@ -84,61 +79,41 @@ function handleGenerateQR_(params) {
 /**
  * Attendance marking logic
  *
- * Students sheet expected columns:
- * A = Roll No
- * B = Password / anything
- * C = Name
- * D = Device ID
- * E = Flag / remark
- * F = Attempt count
- * G = Last attempted device
+ * Students sheet columns:
+ * A = Roll No   B = Password   C = Name   D = Device ID
+ * E = Flag      F = Attempt count   G = Last attempted device
  *
  * Attendance sheet columns:
- * A = DateTime
- * B = Student ID
- * C = Session ID
- * D = Token
- * E = Timestamp
- * F = Scan Latency
- * G = Device ID
- * H = Student Name
+ * A = DateTime  B = Student ID  C = Session ID  D = Token
+ * E = Timestamp F = Scan Latency G = Device ID  H = Student Name
+ * I = Latitude  J = Longitude
  */
 function markAttendance_(data) {
   try {
-    // --- 1. DATA EXTRACTION ---
-    const student_id = String(data.student_id || "").trim(); // may be empty on auto mode
+    /* ---------- 1. DATA EXTRACTION ---------- */
+    const student_id = String(data.student_id || "").trim();
     const session_id = String(data.session_id || "").trim();
-    const token = String(data.token || "").trim();
-    const signature = String(data.signature || "").trim();
-    const device_id = String(data.device_id || "").trim();
-    const lat = String(data.lat || "").trim();
-    const lon = String(data.lon || "").trim();
-    const t_gen = Number(data.timestamp || 0); // QR generation time from payload
-    const t_now = Math.floor(Date.now() / 1000); // current server time
+    const token      = String(data.token      || "").trim();
+    const signature  = String(data.signature  || "").trim();
+    const device_id  = String(data.device_id  || "").trim();
+    const lat        = String(data.lat        || "").trim();
+    const lon        = String(data.lon        || "").trim();
+    const t_gen      = Number(data.timestamp  || 0);
+    const t_now      = Math.floor(Date.now() / 1000);
 
     if (!session_id || !token || !t_gen || !signature || !device_id) {
       return { status: "error", message: "Incomplete parameters" };
     }
 
-    // --- 2. TEMPORAL VALIDATION (SERVER-ONLY) ---
-    const QR_REFRESH_RATE = getQRValiditySec_();
+    /* ---------- 2. TEMPORAL VALIDATION ---------- */
+    const qrValidity = getQRValiditySec_();
     const qrAge = t_now - t_gen;
 
-    if (qrAge < 0) {
-      return { status: "invalid_time", message: "QR time invalid" };
-    }
+    if (qrAge < 0)                          return { status: "invalid_time",  message: "QR time invalid" };
+    if (qrAge > (qrValidity + QR_GRACE_SEC)) return { status: "qr_stale",    message: "QR expired" };
+    if (qrAge > 600)                         return { status: "expired",      message: "Session expired" };
 
-    // Main QR expiry check with grace window
-    if (qrAge > (QR_REFRESH_RATE + QR_GRACE_SEC)) {
-      return { status: "qr_stale", message: "QR expired" };
-    }
-
-    // Hard upper safety limit
-    if (qrAge > 600) {
-      return { status: "expired", message: "Session expired" };
-    }
-
-    // --- 3. SIGNATURE VALIDATION ---
+    /* ---------- 3. SIGNATURE VALIDATION ---------- */
     const secret = getConfigValue("secret_key");
     const fullExpectedSig = generateSignature(session_id, t_gen, token, secret);
 
@@ -146,64 +121,67 @@ function markAttendance_(data) {
       return { status: "invalid_sig", message: "Invalid signature" };
     }
 
-    const cachedToken = CacheService.getScriptCache().get("qr_token_" + token);
-    if (!cachedToken) {
+    if (!CacheService.getScriptCache().get("qr_token_" + token)) {
       return { status: "qr_invalid", message: "QR not found in cache" };
     }
 
-    // --- 4. STUDENT + DEVICE MAPPING ---
+    /* ---------- 4. STUDENT + DEVICE MAPPING ---------- */
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const studentsSheet = ss.getSheetByName("Students");
 
-    if (!studentsSheet) {
-      return { status: "error", message: "Students sheet missing" };
-    }
-
-    const studentData = studentsSheet.getDataRange().getValues();
+    if (!studentsSheet) return { status: "error", message: "Students sheet missing" };
 
     const normalize = (val) => {
       if (typeof val === "number") val = val.toFixed(0);
       return String(val || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
     };
 
-    const normalizedDevice = normalize(device_id);
+    const normalizedDevice  = normalize(device_id);
     const normalizedInputId = normalize(student_id);
 
-    let studentName = "";
-    let foundMatch = false;
-    let finalStudentId = "";
-    let matchedRow = -1;
+    const studentBundle = getStudentsBundle_(studentsSheet);
+    const deviceMap = studentBundle.deviceMap;
+    const rollMap   = studentBundle.rollMap;
+
+    let studentName           = "";
+    let foundMatch            = false;
+    let finalStudentId        = "";
+    let matchedRow            = -1;
     let needsFirstRegistration = false;
+    let deviceChanged          = false;
 
-    for (let i = 1; i < studentData.length; i++) {
-      const sheetRoll = normalize(studentData[i][0]);   // Col A
-      const sheetDevice = normalize(studentData[i][3]); // Col D
-      const name = String(studentData[i][2] || "").trim();
+    /* Case 1: Device already registered and matches */
+    if (normalizedDevice && Object.prototype.hasOwnProperty.call(deviceMap, normalizedDevice)) {
+      const rec  = deviceMap[normalizedDevice];
+      finalStudentId = rec.roll;
+      studentName    = rec.name;
+      matchedRow     = rec.row;
+      deviceChanged  = false;
+      foundMatch     = true;
+    }
 
-      // Case 1: Device already registered and matches
-      if (sheetDevice && sheetDevice === normalizedDevice) {
-        finalStudentId = String(studentData[i][0] || "").trim();
-        studentName = name;
-        matchedRow = i + 1;
-        foundMatch = true;
-        break;
-      }
+    /* Case 2 / 3: Roll no provided */
+    else if (normalizedInputId && Object.prototype.hasOwnProperty.call(rollMap, normalizedInputId)) {
+      const rec  = rollMap[normalizedInputId];
+      matchedRow     = rec.row;
+      finalStudentId = rec.roll;
+      studentName    = rec.name;
+      deviceChanged  = !!(rec.device && rec.device !== normalizedDevice);
+      needsFirstRegistration = !rec.device;
+      foundMatch     = true;
 
-      // Case 2: Student id provided, but another device already registered
-      if (sheetDevice && normalizedInputId && sheetRoll === normalizedInputId) {
-        matchedRow = i + 1;
-
-        return handleDeviceMismatch_(studentsSheet, studentData, matchedRow, device_id);
-      }
-
-      // Case 3: First-time registration possible
-      if (!sheetDevice && normalizedInputId && sheetRoll === normalizedInputId) {
-        finalStudentId = String(studentData[i][0] || "").trim();
-        studentName = name;
-        matchedRow = i + 1;
-        needsFirstRegistration = true;
-        foundMatch = true;
-        break;
+      if (deviceChanged) {
+        const lock = LockService.getScriptLock();
+        try {
+          if (lock.tryLock(2000)) {
+            const prev = Number(studentsSheet.getRange(matchedRow, 6).getValue() || 0);
+            studentsSheet.getRange(matchedRow, 5).setValue("⚠️ Device Changed");
+            studentsSheet.getRange(matchedRow, 6).setValue(prev + 1);
+            studentsSheet.getRange(matchedRow, 7).setValue(device_id);
+          }
+        } finally {
+          try { lock.releaseLock(); } catch(e) {}
+        }
       }
     }
 
@@ -211,82 +189,72 @@ function markAttendance_(data) {
       return { status: "register_required", message: "Device not registered" };
     }
 
-    // --- 5. OPTIONAL FIRST-TIME REGISTRATION WRITE ---
-    // Lock only around sheet write
+    /* ---------- 5. FIRST-TIME DEVICE REGISTRATION ---------- */
     if (needsFirstRegistration) {
       const regLock = LockService.getScriptLock();
-
       try {
-        if (!regLock.tryLock(3000)) {
+        if (!regLock.tryLock(2000)) {
           return { status: "busy", message: "Please scan again" };
         }
-
         const existingDevice = normalize(studentsSheet.getRange(matchedRow, 4).getValue());
-
-        // Re-check inside lock to avoid race
         if (!existingDevice) {
           studentsSheet.getRange(matchedRow, 4).setValue(device_id);
-          SpreadsheetApp.flush();
+          invalidateStudentsCache_();
         } else if (existingDevice !== normalizedDevice) {
           return handleDeviceMismatchAfterRace_(studentsSheet, matchedRow, device_id);
         }
       } finally {
-        try {
-          regLock.releaseLock();
-        } catch (e) {}
+        try { regLock.releaseLock(); } catch(e) {}
       }
     }
 
-    // --- 6. DUPLICATE PREVENTION ---
+    /* ---------- 6. DUPLICATE PREVENTION ---------- */
     const attendanceSheet = getOrCreateSheet_("Attendance");
-    ensureAttendanceHeader_(attendanceSheet);
+    const cache = CacheService.getScriptCache();
 
-  // --- 5. DUPLICATE PREVENTION (FAST - CACHE BASED) ---
-  const cache = CacheService.getScriptCache();
-  const dupKey = "att_" + session_id + "_" + finalStudentId;
+    if (attendanceSheet.getLastRow() === 0) {
+      ensureAttendanceHeader_(attendanceSheet);
+      cache.remove("last_row_att");
+    }
 
-  let isDuplicate = false;
+    const dupKey = "att_" + session_id + "_" + finalStudentId;
+    let isDuplicate = false;
 
-  if (cache.get(dupKey)) {
-    isDuplicate = true;
-  } else {
-    cache.put(dupKey, "1", 1200); // 20 minutes
-  }
+    if (attendanceSheet.getLastRow() <= 1) {
+      isDuplicate = false;
+    } else if (cache.get(dupKey)) {
+      isDuplicate = true;
+    } else {
+      cache.put(dupKey, "1", DUPLICATE_WINDOW_SEC);
+    }
 
-    // --- 7. RECORD ENTRY ---
-    // Lock only around appendRow
+    /* ---------- 7. RECORD ENTRY ---------- */
+    const row = [
+      new Date(), finalStudentId, session_id, token,
+      t_gen, qrAge + "s", device_id, studentName, lat, lon
+    ];
+
     const writeLock = LockService.getScriptLock();
+    if (!writeLock.tryLock(2000)) {
+      return { status: "busy", message: "Please scan again" };
+    }
 
     try {
-      if (!writeLock.tryLock(3000)) {
-        return { status: "busy", message: "Please scan again" };
-      }
-
-      attendanceSheet.appendRow([
-        new Date(),
-        finalStudentId,
-        session_id,
-        token,
-        t_gen,
-        qrAge + "s",
-        device_id,
-        studentName,
-        lat,
-        lon
-      ]);
+      const lastRow = Math.max(attendanceSheet.getLastRow(), 1);
+      attendanceSheet.getRange(lastRow + 1, 1, 1, row.length).setValues([row]);
+      cache.put("last_row_att", String(lastRow + 1), 300);
     } finally {
-      try {
-        writeLock.releaseLock();
-      } catch (e) {}
+      try { writeLock.releaseLock(); } catch(e) {}
     }
 
-    // --- 8. RETURN SUCCESS ---
+    /* ---------- 8. RETURN ---------- */
     return {
       status: "success",
       roll: finalStudentId,
       name: studentName,
       duplicate: isDuplicate,
-      qr_age: qrAge
+      qr_age: qrAge,
+      device_changed: deviceChanged
     };
 
   } catch (err) {
@@ -297,75 +265,83 @@ function markAttendance_(data) {
   }
 }
 
-/* ================= DEVICE HANDLERS ================= */
+/* ================= DEVICE MISMATCH HANDLERS ================= */
 
-/**
- * Handles mismatch when a roll number already has another registered device
- */
-function handleDeviceMismatch_(studentsSheet, studentData, row, device_id) {
+function handleDeviceMismatch_(studentsSheet, row, device_id) {
   const lock = LockService.getScriptLock();
-
   try {
-    if (!lock.tryLock(3000)) {
-      return { status: "busy", message: "Please scan again" };
-    }
-
-    const prev = Number(studentData[row - 1][5] || 0);
-
-    // Flag device change
+    if (!lock.tryLock(2000)) return { status: "busy", message: "Please scan again" };
+    const prev = Number(studentsSheet.getRange(row, 6).getValue() || 0);
     studentsSheet.getRange(row, 5).setValue("⚠️ Device Changed");
-
-    // Increment attempt count
     studentsSheet.getRange(row, 6).setValue(prev + 1);
-
-    // Store last attempted device
     studentsSheet.getRange(row, 7).setValue(device_id);
-
-    SpreadsheetApp.flush();
-
-    return {
-      status: "device_already_registered",
-      message: "⚠️ Different device detected. Attempt recorded."
-    };
+    return { status: "device_already_registered", message: "⚠️ Different device detected. Attempt recorded." };
   } finally {
-    try {
-      lock.releaseLock();
-    } catch (e) {}
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 
-/**
- * Handles mismatch discovered after first-registration race condition
- */
 function handleDeviceMismatchAfterRace_(studentsSheet, row, device_id) {
   const prev = Number(studentsSheet.getRange(row, 6).getValue() || 0);
-
   studentsSheet.getRange(row, 5).setValue("⚠️ Device Changed");
   studentsSheet.getRange(row, 6).setValue(prev + 1);
   studentsSheet.getRange(row, 7).setValue(device_id);
+  return { status: "device_already_registered", message: "⚠️ Different device detected. Attempt recorded." };
+}
 
-  SpreadsheetApp.flush();
+/* ================= STUDENT CACHE ================= */
 
-  return {
-    status: "device_already_registered",
-    message: "⚠️ Different device detected. Attempt recorded."
-  };
+function getStudentsBundle_(studentsSheet) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "students_bundle_v1";
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
+  const lastRow = studentsSheet.getLastRow();
+  const values = lastRow >= 2
+    ? studentsSheet.getRange(2, 1, lastRow - 1, 4).getValues()
+    : [];
+
+  const deviceMap = {};
+  const rollMap   = {};
+
+  for (let i = 0; i < values.length; i++) {
+    const rowNum = i + 2;
+    const roll   = normalizeStatic_(values[i][0]);
+    const name   = String(values[i][2] || "").trim();
+    const device = normalizeStatic_(values[i][3]);
+
+    const rec = {
+      row:    rowNum,
+      roll:   String(values[i][0] || "").trim(),
+      name:   name,
+      device: device
+    };
+
+    if (roll)   rollMap[roll]     = rec;
+    if (device) deviceMap[device] = rec;
+  }
+
+  const bundle = { rollMap, deviceMap };
+  cache.put(cacheKey, JSON.stringify(bundle), STUDENT_CACHE_TTL_SEC);
+  return bundle;
+}
+
+function invalidateStudentsCache_() {
+  CacheService.getScriptCache().remove("students_bundle_v1");
+}
+
+function normalizeStatic_(val) {
+  if (typeof val === "number") val = val.toFixed(0);
+  return String(val || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
 /* ================= CORE HELPERS ================= */
 
 function generateSignature(session_id, timestamp, token, secret) {
   const raw = session_id + "|" + timestamp + "|" + token + "|" + secret;
-  const hash = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256,
-    raw,
-    Utilities.Charset.UTF_8
-  );
-
-  return hash.map(function(b) {
-    const v = (b < 0 ? b + 256 : b).toString(16);
-    return v.length === 1 ? "0" + v : v;
-  }).join("");
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return hash.map(b => { const v = (b < 0 ? b + 256 : b).toString(16); return v.length === 1 ? "0" + v : v; }).join("");
 }
 
 function jsonp(callback, obj) {
@@ -385,32 +361,33 @@ function getOrCreateSheet_(name) {
 
 function ensureAttendanceHeader_(sheet) {
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "DateTime",
-      "Student ID",
-      "Session ID",
-      "Token",
-      "Timestamp",
-      "Scan Latency",
-      "Device ID",
-      "Student Name",
-        "Latitude",
-  "Longitude"
-    ]);
+    sheet.appendRow(["DateTime","Student ID","Session ID","Token","Timestamp","Scan Latency","Device ID","Student Name","Latitude","Longitude"]);
   }
 }
 
 function getConfigValue(key) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "config_map_v1";
+  let configMap = cache.get(cacheKey);
+
+  if (configMap) {
+    configMap = JSON.parse(configMap);
+    return String(configMap[key] || "").trim();
+  }
+
   const sheet = getSheet_("Config");
   if (!sheet) return "";
 
   const data = sheet.getDataRange().getValues();
+  configMap = {};
   for (let i = 0; i < data.length; i++) {
-    if (String(data[i][0]).trim() === key) {
-      return String(data[i][1]).trim();
-    }
+    const k = String(data[i][0] || "").trim();
+    const v = String(data[i][1] || "").trim();
+    if (k) configMap[k] = v;
   }
-  return "";
+
+  cache.put(cacheKey, JSON.stringify(configMap), CONFIG_CACHE_TTL_SEC);
+  return String(configMap[key] || "").trim();
 }
 
 function getQRValiditySec_() {

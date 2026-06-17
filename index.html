@@ -3,90 +3,63 @@
 <head>
 <meta charset="UTF-8">
 <title>Attendance</title>
-
 <style>
+* { box-sizing: border-box; }
 body {
   margin: 0;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f4f6f8;
-  font-family: Arial;
+  background: linear-gradient(135deg, #1d4ed8, #38bdf8);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  padding: 16px;
 }
-
 .card {
   background: white;
-  padding: 30px;
-  border-radius: 14px;
-  width: 360px;              /* 🔥 wider */
+  padding: 32px 28px;
+  border-radius: 18px;
+  width: 360px;
+  max-width: 100%;
   text-align: center;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+  box-shadow: 0 20px 48px rgba(0,0,0,0.18);
 }
-
 h3 {
-  margin-bottom: 15px;
-  color: #2563eb;
-  font-size: 22px;           /* 🔥 bigger title */
+  margin: 0 0 20px;
+  color: #1d4ed8;
+  font-size: 22px;
+  font-weight: 700;
 }
-
 #status {
-  margin-top: 10px;
-  min-height: 28px;
-  font-weight: bold;
-  font-size: 16px;           /* 🔥 bigger message */
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  min-height: 32px;
+  color: #1e293b;
 }
-
-/* 🔥 BIG INPUT */
-input {
-  width: 100%;
-  padding: 14px;
-  margin-top: 18px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 18px;           /* 🔥 big text */
-  text-align: center;
-}
-
-/* 🔥 BIG BUTTON */
-button {
-  width: 100%;
-  padding: 14px;
-  margin-top: 12px;
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 18px;           /* 🔥 big text */
-  font-weight: bold;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #1e4ed8;
-}
-
-.hidden {
+#spinner {
+  margin: 16px auto 0;
+  width: 32px; height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
   display: none;
 }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
-
 <body>
 
 <div class="card">
-  <h3>Attendance</h3>
-
+  <h3>📋 Attendance</h3>
   <div id="status">Initializing...</div>
-
+  <div id="spinner"></div>
 </div>
 
 <script>
-
-/* ================= CONFIG ================= */
 const API = "https://script.google.com/macros/s/AKfycbwQq2JgtG4vofsKwfe_VhyHrW50Fpx5zoKAsqE702jMF6bS3c1Irz_bQKAPKr5Gdpc6/exec";
 
-/* ================= CLASSROOM SESSION ================= */
 const AUTH = {
   sessionToken: localStorage.getItem("student_session_token") || "",
   roll:         localStorage.getItem("student_roll")          || "",
@@ -94,179 +67,149 @@ const AUTH = {
   ok: !!(localStorage.getItem("student_session_token") || localStorage.getItem("student_roll"))
 };
 
-/* ================= ELEMENTS ================= */
-const status = document.getElementById("status");
-const form = document.getElementById("formSection");
-const rollInput = document.getElementById("rollNo");
-const submitBtn = document.getElementById("submitBtn");
-let gps = {
-  lat: "",
-  lon: ""
-};
+const statusEl  = document.getElementById("status");
+const spinnerEl = document.getElementById("spinner");
 let isProcessing = false;
-let isResponseReceived = false;   // 🔥 ADD THIS
-/* ================= PARSE QR ================= */
-function parseQR(raw){
-  if(!raw) return null;
-  const p = raw.split('|');
-  if(p.length < 4) return null;
+let gps = { lat: "", lon: "" };
 
-  return {
-    session: p[0],
-    time: p[1],
-    token: p[2],
-    sig: p[3]
-  };
+function setStatus(msg, color) {
+  statusEl.style.color  = color || "#1e293b";
+  statusEl.innerHTML    = msg;
+  spinnerEl.style.display = "none";
 }
 
-/* ================= JSONP ================= */
-function call(url, cb, done){
-isResponseReceived = false;
-  const script = document.createElement("script");
+function showSpinner(msg) {
+  statusEl.style.color  = "#64748b";
+  statusEl.innerHTML    = msg;
+  spinnerEl.style.display = "block";
+}
 
-  window[cb] = function(res){
-    isResponseReceived = true;   // 🔥 ADD THIS
-    delete window[cb];
-    script.remove();
+function parseQR(raw) {
+  if (!raw) return null;
+  const p = raw.split("|");
+  return p.length >= 4 ? { session: p[0], time: p[1], token: p[2], sig: p[3] } : null;
+}
+
+/* JSONP with timeout + retry */
+function jsonpCall(url, cb, done) {
+  const script = document.createElement("script");
+  let settled  = false;
+
+  const cleanup = () => { delete window[cb]; script.remove(); };
+
+  const timer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    done(null, "timeout");
+  }, 8000);
+
+  window[cb] = (res) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    cleanup();
     done(res);
   };
 
-  script.onerror = function(){
-     isProcessing = false;
-    delete window[cb];
-    script.remove();
-    setStatus("❌ Network Error", "red");
+  script.onerror = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    cleanup();
+    done(null, "network");
   };
 
-  // ✅ THIS IS THE FIX
   script.src = url + "&callback=" + cb;
-
   document.body.appendChild(script);
-
-  // ✅ TIMEOUT SAFETY (VERY IMPORTANT)
-setTimeout(() => {
-  if (!isResponseReceived) {
-    setStatus("⏳ Still verifying...", "black");
-  }
-}, 5000);
 }
 
-/* ================= UI HELPER ================= */
-function setStatus(msg, color="black"){
-  status.style.color = color;
-  status.innerHTML = msg;
-}
-
-
-/* ================= AUTO ATTEND ================= */
-function auto(){
+function auto() {
   if (isProcessing) return;
 
-  if (localStorage.getItem("done") === "1") return;
-
-  // Block if not logged into classroom
-  if (!AUTH.ok) {
-    setStatus("🔒 Please login to the <a href='https://pramodsoni.in/classroom/' style='color:#2563eb'>Classroom Portal</a> first, then scan QR again.", "red");
+  if (localStorage.getItem("done") === "1") {
+    setStatus("✅ Attendance already marked for this session.", "green");
     return;
   }
 
-  isProcessing = true;
-  setStatus("Verifying...", "black");
+  if (!AUTH.ok) {
+    setStatus("🔒 Please login to the <a href='https://pramodsoni.in/classroom/' style='color:#2563eb;font-weight:600'>Classroom Portal</a> first, then scan QR again.", "#ef4444");
+    return;
+  }
 
   const payload = localStorage.getItem("qr");
-  const scanTime = localStorage.getItem("scan_time");
-  const device = localStorage.getItem("device");
-
-  if (!payload) {
-    setStatus("⚠️ Scan QR first", "black");
-    isProcessing = false;
-    return;
-  }
+  if (!payload) { setStatus("⚠️ No QR found. Scan the QR code first.", "#f59e0b"); return; }
 
   const q = parseQR(payload);
-  if (!q) {
-    setStatus("❌ Invalid QR", "red");
-    isProcessing = false;
-    return;
-  }
+  if (!q) { setStatus("❌ Invalid QR code.", "#ef4444"); return; }
 
-  const cb = "auto_" + Date.now();
+  isProcessing = true;
+  showSpinner("Verifying attendance...");
 
+  const device = localStorage.getItem("device") || "";
   const url = API
     + "?type=mark_attendance"
-    + "&student_id=" + encodeURIComponent(AUTH.roll)
-    + "&session_token=" + encodeURIComponent(AUTH.sessionToken)
-    + "&session_id=" + q.session
-    + "&token=" + q.token
-    + "&timestamp=" + q.time
-    + "&scan_time=" + scanTime
-    + "&signature=" + q.sig
-    + "&device_id=" + device
-    + "&lat=" + gps.lat
-    + "&lon=" + gps.lon;
+    + "&student_id="     + encodeURIComponent(AUTH.roll)
+    + "&session_token="  + encodeURIComponent(AUTH.sessionToken)
+    + "&session_id="     + encodeURIComponent(q.session)
+    + "&token="          + encodeURIComponent(q.token)
+    + "&timestamp="      + encodeURIComponent(q.time)
+    + "&signature="      + encodeURIComponent(q.sig)
+    + "&device_id="      + encodeURIComponent(device)
+    + "&lat="            + gps.lat
+    + "&lon="            + gps.lon;
 
-  call(url, cb, function(res){
+  jsonpCall(url, "att_" + Date.now(), (res, err) => {
     isProcessing = false;
-    if (!res || !res.status) {
-      setStatus("❌ Server Error", "red");
+
+    if (!res) {
+      setStatus(err === "timeout"
+        ? "⏳ Server is slow. Please try scanning again."
+        : "❌ Network error. Check your connection.", "#ef4444");
       return;
     }
 
     if (res.status === "success") {
       localStorage.setItem("done", "1");
-      if (res.duplicate) {
-        setStatus("⚠️ Already marked: <b>" + res.name + "</b>", "orange");
-      } else {
-        setStatus("✅ Attendance marked: <b>" + res.name + "</b>", "green");
-      }
-      form.classList.add("hidden");
       localStorage.removeItem("qr");
       localStorage.removeItem("scan_time");
-    }
-
-    else if (res.status === "register_required") {
-      // Shouldn't happen for Google-login users, but fallback
-      setStatus("⚠️ Student not found. Contact instructor.", "red");
-    }
-
-    else if (res.status === "device_already_registered") {
-      setStatus("🚫 Device mismatch. Contact instructor.", "red");
-    }
-
-    else {
-      setStatus("❌ " + (res.message || res.status), "red");
+      setStatus(res.duplicate
+        ? "⚠️ Already marked: <b>" + (res.name || AUTH.name) + "</b>"
+        : "✅ Marked: <b>" + (res.name || AUTH.name) + "</b>",
+        res.duplicate ? "#f59e0b" : "green");
+    } else if (res.status === "register_required") {
+      setStatus("⚠️ Student not found. Contact instructor.", "#ef4444");
+    } else if (res.status === "device_already_registered") {
+      setStatus("🚫 Device mismatch. Contact instructor.", "#ef4444");
+    } else if (res.status === "qr_stale" || res.status === "expired") {
+      setStatus("⏰ QR expired. Ask instructor to refresh.", "#f59e0b");
+    } else {
+      setStatus("❌ " + (res.message || res.status), "#ef4444");
     }
   });
 }
 
-
-/* ================= INIT ================= */
-window.onload = function(){
-
-  // Use device ID from classroom login if available, otherwise generate one
-  const classroomDeviceId = localStorage.getItem("device_id");
-  if (classroomDeviceId) {
-    localStorage.setItem("device", classroomDeviceId);
-  } else if (!localStorage.getItem("device")) {
-    localStorage.setItem("device", "DEV-" + Math.random().toString(36).slice(2, 8));
+window.onload = function () {
+  /* Device ID */
+  if (!localStorage.getItem("device")) {
+    localStorage.setItem("device", "DEV-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
   }
 
-  // read QR
+  /* Read QR from URL */
   const p = new URLSearchParams(location.search).get("p");
-
-  if(p){
+  if (p) {
     localStorage.removeItem("done");
     localStorage.setItem("qr", p);
-    localStorage.setItem("scan_time", Math.floor(Date.now()/1000));
+    localStorage.setItem("scan_time", Math.floor(Date.now() / 1000));
   }
-// 🔥 SAFE GPS CALL (after load)
 
+  /* GPS — mandatory */
   if (!navigator.geolocation) {
-    setStatus("❌ GPS not supported on this device. Use a smartphone.", "red");
+    setStatus("❌ GPS not supported. Use a smartphone.", "#ef4444");
     return;
   }
 
-  setStatus("📍 Getting your location...", "black");
+  showSpinner("📍 Getting your location...");
 
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -275,25 +218,16 @@ window.onload = function(){
       auto();
     },
     (err) => {
-      // GPS denied or unavailable — block attendance
-      const messages = {
-        1: "❌ Location access denied. Enable GPS permission and refresh.",
-        2: "❌ Location unavailable. Move to an open area and refresh.",
+      const msg = {
+        1: "❌ Location denied. Enable GPS and refresh.",
+        2: "❌ Location unavailable. Move to an open area.",
         3: "❌ Location timed out. Refresh and try again."
       };
-      setStatus(messages[err.code] || "❌ GPS error. Enable location and refresh.", "red");
+      setStatus(msg[err.code] || "❌ GPS error.", "#ef4444");
     },
-    {
-      enableHighAccuracy: false,
-      timeout: 20000,
-      maximumAge: 120000
-    }
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }
   );
 };
-
-
-
 </script>
-
 </body>
 </html>

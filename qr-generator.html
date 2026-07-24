@@ -128,7 +128,7 @@ const PORTAL_URL = "https://pramodsoni.in/Attendance/";
 
 let QR_VALIDITY_MS = 40000;
 const LEAD_TIME_MS = 3000;
-let ADMIN_PASS = "";
+let ADMIN_PASS = "";   // held in memory only; verified server-side, never fetched
 let SESSION_ID = "";
 let qrTimeout  = null;
 let countdownInterval = null;
@@ -160,34 +160,52 @@ function loadSessions() {
     document.getElementById("statusBar").textContent = "Could not reach server.";
   });
 
-  jsonp(`${API_URL}?type=get_admin_pass`, "pass_" + Date.now(), (res) => {
-    if (res.status === "success") ADMIN_PASS = res.pass;
-  });
 }
 
 /* ===== START ===== */
 function startQR() {
-  const passInput = document.getElementById("passInput").value.trim();
   const err = document.getElementById("errMsg");
+  const passInput = document.getElementById("passInput").value.trim();
 
-  if (!ADMIN_PASS) { err.textContent = "Server not ready, refresh page."; return; }
-  if (passInput !== ADMIN_PASS) { err.textContent = "Wrong password."; return; }
+  if (!passInput) { err.textContent = "Enter the admin password."; return; }
 
   SESSION_ID = document.getElementById("sessionSelect").value;
   if (!SESSION_ID) { err.textContent = "Select a session first."; return; }
 
-  document.getElementById("setupSection").style.display = "none";
-  document.getElementById("qrSection").style.display    = "block";
-  document.getElementById("sessionLabel").textContent   = `Session: ${SESSION_ID}`;
-  fetchQR();
+  // Password is checked by the server on the first generate_qr call
+  ADMIN_PASS = passInput;
+  err.textContent = "Verifying...";
+  fetchQR(true);
+}
+
+/* Called when the server rejects the admin password */
+function onBadPassword() {
+  ADMIN_PASS = "";
+  if (qrTimeout) clearTimeout(qrTimeout);
+  if (countdownInterval) clearInterval(countdownInterval);
+  document.getElementById("qrSection").style.display    = "none";
+  document.getElementById("setupSection").style.display = "block";
+  document.getElementById("errMsg").textContent = "Wrong password.";
+  document.getElementById("passInput").value = "";
+  document.getElementById("passInput").focus();
 }
 
 /* ===== FETCH QR ===== */
-function fetchQR() {
-  jsonp(`${API_URL}?type=generate_qr&session_id=${encodeURIComponent(SESSION_ID)}`,
+function fetchQR(isFirst) {
+  jsonp(`${API_URL}?type=generate_qr&session_id=${encodeURIComponent(SESSION_ID)}&admin_pass=${encodeURIComponent(ADMIN_PASS)}`,
     "qr_" + Date.now(),
     (data) => {
+      if (data.status === "bad_admin_pass") { onBadPassword(); return; }
       if (data.status !== "success") { qrTimeout = setTimeout(fetchQR, 2000); return; }
+
+      if (isFirst) {
+        // Password accepted — reveal the QR screen
+        document.getElementById("errMsg").textContent = "";
+        document.getElementById("setupSection").style.display = "none";
+        document.getElementById("qrSection").style.display    = "block";
+        document.getElementById("sessionLabel").textContent   = `Session: ${SESSION_ID}`;
+      }
+
       QR_VALIDITY_MS = data.validity_sec * 1000;
       timeOffset = data.server_time - Date.now();
       const payload  = data.qr_payload;
